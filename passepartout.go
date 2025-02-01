@@ -47,28 +47,18 @@ type Passepartout struct {
 }
 
 func (p *Passepartout) Render(out io.Writer, name string, data any) error {
-	templates, err := p.Loader.pageTemplate(name)
+	t, err := p.Loader.Page(name)
 	if err != nil {
 		return err
-	}
-
-	t, ok := templates[name]
-	if !ok {
-		return fmt.Errorf("template not found: %q", name)
 	}
 
 	return t.ExecuteTemplate(out, name, data)
 }
 
 func (p *Passepartout) RenderInLayout(out io.Writer, layout string, name string, data any) error {
-	templates, err := p.Loader.pageTemplate(name)
+	t, err := p.Loader.PageInLayout(name, layout)
 	if err != nil {
 		return err
-	}
-
-	t, ok := templates[path.Join(layout, name)]
-	if !ok {
-		return fmt.Errorf("template not found: %q", name)
 	}
 
 	return t.ExecuteTemplate(out, layout, data)
@@ -87,24 +77,9 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 		allFiles:     map[string]*tmpl{},
 		layouts:      []string{},
 	}
-	templates := map[string]*template.Template{}
 
-	// find all the pages, partials, and layouts
-	pages, err := load.filesAndCategorize()
-	if err != nil {
+	if err := load.filesAndCategorize(); err != nil {
 		return nil, fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	// create all pages and attach their needed partials. creates a base page without layout, and then each layout we find will get a version of each page.
-	for _, name := range pages {
-		pageTemplates, err := load.pageTemplate(name)
-		if err != nil {
-			return nil, err
-		}
-
-		for pathName, templ := range pageTemplates {
-			templates[pathName] = templ
-		}
 	}
 
 	pp := Passepartout{Loader: load}
@@ -115,7 +90,14 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 	return &pp, nil
 }
 
-func (l *loader) pageTemplate(pageName string) (map[string]*template.Template, error) {
+type loader struct {
+	fsys         fs.ReadDirFS
+	baseTemplate *template.Template
+	allFiles     map[string]*tmpl // stores all the known pieces from the filesystem, the template, the folders, and all the partials
+	layouts      []string         // the known layouts with their content
+}
+
+func (l *loader) Page(pageName string) (*template.Template, error) {
 	baseWithPartials, err := l.baseTemplate.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone base template: %w", err)
@@ -135,34 +117,34 @@ func (l *loader) pageTemplate(pageName string) (map[string]*template.Template, e
 		return nil, fmt.Errorf("failed to read template %q: %w", pageName, err)
 	}
 
-	base, err := baseWithPartials.Clone()
+	page, err := baseWithPartials.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone template %q: %w", pageName, err)
 	}
 
 	// add the page without a layout
-	if _, err := base.New(pageName).Parse(string(pageContent)); err != nil {
+	if _, err := page.New(pageName).Parse(string(pageContent)); err != nil {
 		return nil, fmt.Errorf("failed to parse template %q: %w", pageName, err)
 	}
 
-	templates := map[string]*template.Template{}
-	templates[pageName] = base
+	return page, nil
+}
 
-	if err := l.pageInLayouts(pageContent, pageName, base, templates); err != nil {
+func (l *loader) PageInLayout(pageName string, layout string) (*template.Template, error) {
+	pageTemplate, err := l.Page(pageName)
+	if err != nil {
 		return nil, err
 	}
 
-	return templates, nil
+	t, err := l.pageInLayout(pageName, layout, pageTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	return t, nil
 }
 
-type loader struct {
-	fsys         fs.ReadDirFS
-	baseTemplate *template.Template
-	allFiles     map[string]*tmpl // stores all the known pieces from the filesystem, the template, the folders, and all the partials
-	layouts      []string         // the known layouts with their content
-}
-
-func (l *loader) filesAndCategorize() ([]string, error) {
+func (l *loader) filesAndCategorize() error {
 	var pages []string
 
 	err := fs.WalkDir(l.fsys, ".", func(p string, entry fs.DirEntry, err error) error {
@@ -186,10 +168,10 @@ func (l *loader) filesAndCategorize() ([]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to walk filesystem for template files: %w", err)
+		return fmt.Errorf("failed to walk filesystem for template files: %w", err)
 	}
 
-	return pages, nil
+	return nil
 }
 
 func (l *loader) ReadFile(name string) ([]byte, error) {
@@ -233,30 +215,25 @@ func (l *loader) pageFolderPartialsIntoBase(name string, base *template.Template
 	return nil
 }
 
-func (l *loader) pageInLayouts(pageContent []byte, name string, base *template.Template, templates map[string]*template.Template) error {
-	contentInContent := `{{ define "content" }}` + string(pageContent) + `{{ end }}`
-	for _, lName := range l.layouts {
-		page, err := base.Clone()
-		if err != nil {
-			return fmt.Errorf("failed to clone template for layout %q: %w", name, err)
-		}
-
-		lContent, err := l.ReadFile(lName)
-		if err != nil {
-			return fmt.Errorf("failed to read layout %q: %w", lName, err)
-		}
-
-		if _, err := page.New(lName).Parse(string(lContent)); err != nil {
-			return fmt.Errorf("failed to parse layout %q: %w", lName, err)
-		}
-
-		layoutPagePath := path.Join(lName, name)
-		if _, err := page.New(layoutPagePath).Parse(contentInContent); err != nil {
-			return fmt.Errorf("failed to parse template when wrapped in define %q: %w", name, err)
-		}
-
-		templates[layoutPagePath] = page
+func (l *loader) pageInLayout(page string, layout string, pageTemplate *template.Template) (*template.Template, error) {
+	pageContent, err := l.ReadFile(page)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template %q: %w", page, err)
 	}
 
-	return nil
+	lContent, err := l.ReadFile(layout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read layout %q: %w", layout, err)
+	}
+
+	if _, err := pageTemplate.New(layout).Parse(string(lContent)); err != nil {
+		return nil, fmt.Errorf("failed to parse layout %q: %w", layout, err)
+	}
+
+	contentInContent := `{{ define "content" }}` + string(pageContent) + `{{ end }}`
+	if _, err := pageTemplate.New(page).Parse(contentInContent); err != nil {
+		return nil, fmt.Errorf("failed to parse template when wrapped in define %q: %w", page, err)
+	}
+
+	return pageTemplate, nil
 }
