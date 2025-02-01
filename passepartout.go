@@ -77,6 +77,7 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 	templates := map[string]*template.Template{}
 	layouts := map[string]string{}
 
+	// find all the pages, partials, and layouts
 	err := fs.WalkDir(fsys, ".", func(p string, entry fs.DirEntry, err error) error {
 		if entry.IsDir() {
 			all[p+"/"] = tmpl{}
@@ -110,75 +111,41 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
+	// create all pages and attach their needed partials. creates a base page without layout, and then each layout we find will get a version of each page.
 	for _, t := range templts {
 		baseWithPartials, err := baseTemplate.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("failed to clone base template: %w", err)
 		}
 
-		dir := path.Dir(t) + "/"
-		if sameDir, ok := all[dir]; ok {
-			for _, partial := range sameDir.partials {
-				content, err := fs.ReadFile(fsys, partial)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read partial %q: %w", partial, err)
-				}
-				_, err = baseWithPartials.New(path.Base(partial)).Parse(string(content))
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse partial %q: %w", partial, err)
-				}
-			}
-
+		if err := attachSameDirPartials(fsys, t, all, baseWithPartials); err != nil {
+			return nil, err
 		}
 
-		ext := path.Ext(t)
-		tmplDir := strings.TrimSuffix(t, ext) + "/"
-		if partialDir, ok := all[tmplDir]; ok {
-			for _, partial := range partialDir.partials {
-				content, err := fs.ReadFile(fsys, partial)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read partial %q: %w", partial, err)
-				}
-				_, err = baseWithPartials.New(path.Base(partial)).Parse(string(content))
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse partial %q: %w", partial, err)
-				}
-			}
+		if err := attachPageFolderPartials(fsys, t, all, baseWithPartials); err != nil {
+			return nil, err
 		}
 
-		content, err := fs.ReadFile(fsys, t)
+		// load the file itself
+		pageContent, err := fs.ReadFile(fsys, t)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read template %q: %w", t, err)
 		}
 
-		// add the page template without a layout
 		base, err := baseWithPartials.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("failed to clone template %q: %w", t, err)
 		}
-		if _, err := base.New(t).Parse(string(content)); err != nil {
+
+		// add the page without a layout
+		if _, err := base.New(t).Parse(string(pageContent)); err != nil {
 			return nil, fmt.Errorf("failed to parse template %q: %w", t, err)
 		}
 		templates[t] = base
 
 		// add the page wrapped in a block content with a prefix path for each layout
-		contentInContent := `{{ define "content" }}` + string(content) + `{{ end }}`
-		for l, lContent := range layouts {
-			base, err := baseWithPartials.Clone()
-			if err != nil {
-				return nil, fmt.Errorf("failed to clone template %q: %w", t, err)
-			}
-
-			if _, err := base.New(l).Parse(lContent); err != nil {
-				return nil, fmt.Errorf("failed to parse layout %q: %w", l, err)
-			}
-
-			layoutPagePath := path.Join(l, t)
-			if _, err := base.New(layoutPagePath).Parse(contentInContent); err != nil {
-				return nil, fmt.Errorf("failed to parse template when wrapped in define %q: %w", t, err)
-			}
-
-			templates[layoutPagePath] = base
+		if err := pageInLayouts(pageContent, layouts, templates, t, base); err != nil {
+			return nil, err
 		}
 	}
 
@@ -188,4 +155,64 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 	}
 
 	return &pp, nil
+}
+
+func attachSameDirPartials(fsys fs.ReadDirFS, name string, all map[string]tmpl, base *template.Template) error {
+	dir := path.Dir(name) + "/"
+	if sameDir, ok := all[dir]; ok {
+		for _, partial := range sameDir.partials {
+			content, err := fs.ReadFile(fsys, partial)
+			if err != nil {
+				return fmt.Errorf("failed to read partial %q: %w", partial, err)
+			}
+
+			if _, err = base.New(path.Base(partial)).Parse(string(content)); err != nil {
+				return fmt.Errorf("failed to parse partial %q: %w", partial, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func attachPageFolderPartials(fsys fs.ReadDirFS, name string, all map[string]tmpl, base *template.Template) error {
+	ext := path.Ext(name)
+	tmplDir := strings.TrimSuffix(name, ext) + "/"
+	if partialDir, ok := all[tmplDir]; ok {
+		for _, partial := range partialDir.partials {
+			content, err := fs.ReadFile(fsys, partial)
+			if err != nil {
+				return fmt.Errorf("failed to read partial %q: %w", partial, err)
+			}
+
+			if _, err = base.New(path.Base(partial)).Parse(string(content)); err != nil {
+				return fmt.Errorf("failed to parse partial %q: %w", partial, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func pageInLayouts(pageContent []byte, layouts map[string]string, templates map[string]*template.Template, name string, base *template.Template) error {
+	contentInContent := `{{ define "content" }}` + string(pageContent) + `{{ end }}`
+	for l, lContent := range layouts {
+		page, err := base.Clone()
+		if err != nil {
+			return fmt.Errorf("failed to clone template for layout %q: %w", name, err)
+		}
+
+		if _, err := page.New(l).Parse(lContent); err != nil {
+			return fmt.Errorf("failed to parse layout %q: %w", l, err)
+		}
+
+		layoutPagePath := path.Join(l, name)
+		if _, err := page.New(layoutPagePath).Parse(contentInContent); err != nil {
+			return fmt.Errorf("failed to parse template when wrapped in define %q: %w", name, err)
+		}
+
+		templates[layoutPagePath] = page
+	}
+
+	return nil
 }
