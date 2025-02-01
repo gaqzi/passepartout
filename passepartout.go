@@ -72,62 +72,37 @@ type tmpl struct {
 // Load initializes and loads templates from the provided filesystem.
 func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 	baseTemplate := template.New("")
-	all := map[string]tmpl{}
-	var templts []string
+	load := &loader{
+		fsys:     fsys,
+		allFiles: map[string]*tmpl{},
+		layouts:  []string{},
+		pages:    []string{},
+	}
 	templates := map[string]*template.Template{}
-	layouts := map[string]string{}
 
 	// find all the pages, partials, and layouts
-	err := fs.WalkDir(fsys, ".", func(p string, entry fs.DirEntry, err error) error {
-		if entry.IsDir() {
-			all[p+"/"] = tmpl{}
-			return nil // skip since WalkDir will recurse for us
-		}
-
-		if strings.HasPrefix(entry.Name(), "_") {
-			filePath := path.Dir(p) + "/"
-			x, ok := all[filePath]
-			if !ok {
-				return fmt.Errorf("failed to find template %q", filePath) // XXX: add test case for this (can I?)
-			}
-			x.partials = append(x.partials, p)
-			all[filePath] = x
-			return nil
-		} else if isLayout := strings.HasPrefix(p, "layouts/") || strings.Contains(p, "/layouts/"); isLayout {
-			content, err := fs.ReadFile(fsys, p)
-			if err != nil {
-				return fmt.Errorf("failed to read layout %q: %w", p, err)
-			}
-
-			layouts[p] = string(content)
-			return nil
-		}
-
-		templts = append(templts, p)
-
-		return nil
-	})
+	err := load.filesAndCategorize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
 	// create all pages and attach their needed partials. creates a base page without layout, and then each layout we find will get a version of each page.
-	for _, t := range templts {
+	for _, t := range load.pages {
 		baseWithPartials, err := baseTemplate.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("failed to clone base template: %w", err)
 		}
 
-		if err := attachSameDirPartials(fsys, t, all, baseWithPartials); err != nil {
+		if err := load.sameDirPartialsIntoBase(t, baseWithPartials); err != nil {
 			return nil, err
 		}
 
-		if err := attachPageFolderPartials(fsys, t, all, baseWithPartials); err != nil {
+		if err := load.pageFolderPartialsIntoBase(t, baseWithPartials); err != nil {
 			return nil, err
 		}
 
 		// load the file itself
-		pageContent, err := fs.ReadFile(fsys, t)
+		pageContent, err := load.ReadFile(t)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read template %q: %w", t, err)
 		}
@@ -144,7 +119,7 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 		templates[t] = base
 
 		// add the page wrapped in a block content with a prefix path for each layout
-		if err := pageInLayouts(pageContent, layouts, templates, t, base); err != nil {
+		if err := load.pageInLayouts(pageContent, t, base, templates); err != nil {
 			return nil, err
 		}
 	}
@@ -157,11 +132,46 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 	return &pp, nil
 }
 
-func attachSameDirPartials(fsys fs.ReadDirFS, name string, all map[string]tmpl, base *template.Template) error {
+type loader struct {
+	fsys      fs.ReadDirFS
+	allFiles  map[string]*tmpl              // stores all the known pieces from the filesystem, the template, the folders, and all the partials
+	layouts   []string                      // the known layouts with their content
+	pages     []string                      // all the standalone pages that uses partials and layouts
+	templates map[string]*template.Template // the templates we're making available after loading
+}
+
+func (l *loader) filesAndCategorize() error {
+	return fs.WalkDir(l.fsys, ".", func(p string, entry fs.DirEntry, err error) error {
+		if entry.IsDir() {
+			l.allFiles[p+"/"] = &tmpl{}
+		} else if isPartial := strings.HasPrefix(entry.Name(), "_"); isPartial {
+			filePath := path.Dir(p) + "/"
+			dir, ok := l.allFiles[filePath]
+			if !ok {
+				dir = &tmpl{}
+				l.allFiles[filePath] = dir
+			}
+
+			dir.partials = append(dir.partials, p)
+		} else if isLayout := strings.HasPrefix(p, "layouts/") || strings.Contains(p, "/layouts/"); isLayout {
+			l.layouts = append(l.layouts, p)
+		} else {
+			l.pages = append(l.pages, p)
+		}
+
+		return nil
+	})
+}
+
+func (l *loader) ReadFile(name string) ([]byte, error) {
+	return fs.ReadFile(l.fsys, name)
+}
+
+func (l *loader) sameDirPartialsIntoBase(name string, base *template.Template) error {
 	dir := path.Dir(name) + "/"
-	if sameDir, ok := all[dir]; ok {
+	if sameDir, ok := l.allFiles[dir]; ok {
 		for _, partial := range sameDir.partials {
-			content, err := fs.ReadFile(fsys, partial)
+			content, err := l.ReadFile(partial)
 			if err != nil {
 				return fmt.Errorf("failed to read partial %q: %w", partial, err)
 			}
@@ -175,12 +185,12 @@ func attachSameDirPartials(fsys fs.ReadDirFS, name string, all map[string]tmpl, 
 	return nil
 }
 
-func attachPageFolderPartials(fsys fs.ReadDirFS, name string, all map[string]tmpl, base *template.Template) error {
+func (l *loader) pageFolderPartialsIntoBase(name string, base *template.Template) error {
 	ext := path.Ext(name)
 	tmplDir := strings.TrimSuffix(name, ext) + "/"
-	if partialDir, ok := all[tmplDir]; ok {
+	if partialDir, ok := l.allFiles[tmplDir]; ok {
 		for _, partial := range partialDir.partials {
-			content, err := fs.ReadFile(fsys, partial)
+			content, err := l.ReadFile(partial)
 			if err != nil {
 				return fmt.Errorf("failed to read partial %q: %w", partial, err)
 			}
@@ -194,19 +204,24 @@ func attachPageFolderPartials(fsys fs.ReadDirFS, name string, all map[string]tmp
 	return nil
 }
 
-func pageInLayouts(pageContent []byte, layouts map[string]string, templates map[string]*template.Template, name string, base *template.Template) error {
+func (l *loader) pageInLayouts(pageContent []byte, name string, base *template.Template, templates map[string]*template.Template) error {
 	contentInContent := `{{ define "content" }}` + string(pageContent) + `{{ end }}`
-	for l, lContent := range layouts {
+	for _, lName := range l.layouts {
 		page, err := base.Clone()
 		if err != nil {
 			return fmt.Errorf("failed to clone template for layout %q: %w", name, err)
 		}
 
-		if _, err := page.New(l).Parse(lContent); err != nil {
-			return fmt.Errorf("failed to parse layout %q: %w", l, err)
+		lContent, err := l.ReadFile(lName)
+		if err != nil {
+			return fmt.Errorf("failed to read layout %q: %w", lName, err)
 		}
 
-		layoutPagePath := path.Join(l, name)
+		if _, err := page.New(lName).Parse(string(lContent)); err != nil {
+			return fmt.Errorf("failed to parse layout %q: %w", lName, err)
+		}
+
+		layoutPagePath := path.Join(lName, name)
 		if _, err := page.New(layoutPagePath).Parse(contentInContent); err != nil {
 			return fmt.Errorf("failed to parse template when wrapped in define %q: %w", name, err)
 		}
