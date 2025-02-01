@@ -76,51 +76,24 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 		fsys:     fsys,
 		allFiles: map[string]*tmpl{},
 		layouts:  []string{},
-		pages:    []string{},
 	}
 	templates := map[string]*template.Template{}
 
 	// find all the pages, partials, and layouts
-	err := load.filesAndCategorize()
+	pages, err := load.filesAndCategorize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
 	// create all pages and attach their needed partials. creates a base page without layout, and then each layout we find will get a version of each page.
-	for _, t := range load.pages {
-		baseWithPartials, err := baseTemplate.Clone()
+	for _, name := range pages {
+		pageTemplates, err := load.pageTemplate(name, baseTemplate)
 		if err != nil {
-			return nil, fmt.Errorf("failed to clone base template: %w", err)
-		}
-
-		if err := load.sameDirPartialsIntoBase(t, baseWithPartials); err != nil {
 			return nil, err
 		}
 
-		if err := load.pageFolderPartialsIntoBase(t, baseWithPartials); err != nil {
-			return nil, err
-		}
-
-		// load the file itself
-		pageContent, err := load.ReadFile(t)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read template %q: %w", t, err)
-		}
-
-		base, err := baseWithPartials.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone template %q: %w", t, err)
-		}
-
-		// add the page without a layout
-		if _, err := base.New(t).Parse(string(pageContent)); err != nil {
-			return nil, fmt.Errorf("failed to parse template %q: %w", t, err)
-		}
-		templates[t] = base
-
-		// add the page wrapped in a block content with a prefix path for each layout
-		if err := load.pageInLayouts(pageContent, t, base, templates); err != nil {
-			return nil, err
+		for pathName, templ := range pageTemplates {
+			templates[pathName] = templ
 		}
 	}
 
@@ -132,16 +105,56 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 	return &pp, nil
 }
 
-type loader struct {
-	fsys      fs.ReadDirFS
-	allFiles  map[string]*tmpl              // stores all the known pieces from the filesystem, the template, the folders, and all the partials
-	layouts   []string                      // the known layouts with their content
-	pages     []string                      // all the standalone pages that uses partials and layouts
-	templates map[string]*template.Template // the templates we're making available after loading
+func (l *loader) pageTemplate(pageName string, baseTemplate *template.Template) (map[string]*template.Template, error) {
+	baseWithPartials, err := baseTemplate.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone base template: %w", err)
+	}
+
+	if err := l.sameDirPartialsIntoBase(pageName, baseWithPartials); err != nil {
+		return nil, err
+	}
+
+	if err := l.pageFolderPartialsIntoBase(pageName, baseWithPartials); err != nil {
+		return nil, err
+	}
+
+	// load the file itself
+	pageContent, err := l.ReadFile(pageName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template %q: %w", pageName, err)
+	}
+
+	base, err := baseWithPartials.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone template %q: %w", pageName, err)
+	}
+
+	// add the page without a layout
+	if _, err := base.New(pageName).Parse(string(pageContent)); err != nil {
+		return nil, fmt.Errorf("failed to parse template %q: %w", pageName, err)
+	}
+
+	templates := map[string]*template.Template{}
+	templates[pageName] = base
+
+	if err := l.pageInLayouts(pageContent, pageName, base, templates); err != nil {
+		return nil, err
+	}
+
+	return templates, nil
 }
 
-func (l *loader) filesAndCategorize() error {
-	return fs.WalkDir(l.fsys, ".", func(p string, entry fs.DirEntry, err error) error {
+type loader struct {
+	fsys     fs.ReadDirFS
+	allFiles map[string]*tmpl // stores all the known pieces from the filesystem, the template, the folders, and all the partials
+	layouts  []string         // the known layouts with their content
+}
+
+func (l *loader) filesAndCategorize() ([]string, error) {
+	var pages []string
+
+	err := fs.WalkDir(l.fsys, ".", func(p string, entry fs.DirEntry, err error) error {
 		if entry.IsDir() {
 			l.allFiles[p+"/"] = &tmpl{}
 		} else if isPartial := strings.HasPrefix(entry.Name(), "_"); isPartial {
@@ -156,11 +169,16 @@ func (l *loader) filesAndCategorize() error {
 		} else if isLayout := strings.HasPrefix(p, "layouts/") || strings.Contains(p, "/layouts/"); isLayout {
 			l.layouts = append(l.layouts, p)
 		} else {
-			l.pages = append(l.pages, p)
+			pages = append(pages, p)
 		}
 
 		return nil
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk filesystem for template files: %w", err)
+	}
+
+	return pages, nil
 }
 
 func (l *loader) ReadFile(name string) ([]byte, error) {
