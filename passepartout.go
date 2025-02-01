@@ -43,11 +43,16 @@ type Option func(p *Passepartout)
 //	templates := passepartout.Templates() // returns a list of all known templates and a mapping of which partials it has access to. Ex: {"index/main.tmpl": []string{"index/_main/_item.tmpl"}}
 //	str, err := passepartout.Render("index/main.tmpl", map[string]any{"Items": []string{"Hello", "World"}})  // renders the index/main.tmpl using the index/_main/_item.tmpl partial and returns the result as a string
 type Passepartout struct {
-	Templates map[string]*template.Template
+	Loader *loader
 }
 
 func (p *Passepartout) Render(out io.Writer, name string, data any) error {
-	t, ok := p.Templates[name]
+	templates, err := p.Loader.pageTemplate(name)
+	if err != nil {
+		return err
+	}
+
+	t, ok := templates[name]
 	if !ok {
 		return fmt.Errorf("template not found: %q", name)
 	}
@@ -56,7 +61,12 @@ func (p *Passepartout) Render(out io.Writer, name string, data any) error {
 }
 
 func (p *Passepartout) RenderInLayout(out io.Writer, layout string, name string, data any) error {
-	t, ok := p.Templates[path.Join(layout, name)]
+	templates, err := p.Loader.pageTemplate(name)
+	if err != nil {
+		return err
+	}
+
+	t, ok := templates[path.Join(layout, name)]
 	if !ok {
 		return fmt.Errorf("template not found: %q", name)
 	}
@@ -71,11 +81,11 @@ type tmpl struct {
 
 // Load initializes and loads templates from the provided filesystem.
 func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
-	baseTemplate := template.New("")
 	load := &loader{
-		fsys:     fsys,
-		allFiles: map[string]*tmpl{},
-		layouts:  []string{},
+		fsys:         fsys,
+		baseTemplate: template.New(""),
+		allFiles:     map[string]*tmpl{},
+		layouts:      []string{},
 	}
 	templates := map[string]*template.Template{}
 
@@ -87,7 +97,7 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 
 	// create all pages and attach their needed partials. creates a base page without layout, and then each layout we find will get a version of each page.
 	for _, name := range pages {
-		pageTemplates, err := load.pageTemplate(name, baseTemplate)
+		pageTemplates, err := load.pageTemplate(name)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +107,7 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 		}
 	}
 
-	pp := Passepartout{Templates: templates}
+	pp := Passepartout{Loader: load}
 	for _, option := range options {
 		option(&pp)
 	}
@@ -105,8 +115,8 @@ func Load(fsys fs.ReadDirFS, options ...Option) (*Passepartout, error) {
 	return &pp, nil
 }
 
-func (l *loader) pageTemplate(pageName string, baseTemplate *template.Template) (map[string]*template.Template, error) {
-	baseWithPartials, err := baseTemplate.Clone()
+func (l *loader) pageTemplate(pageName string) (map[string]*template.Template, error) {
+	baseWithPartials, err := l.baseTemplate.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone base template: %w", err)
 	}
@@ -146,9 +156,10 @@ func (l *loader) pageTemplate(pageName string, baseTemplate *template.Template) 
 }
 
 type loader struct {
-	fsys     fs.ReadDirFS
-	allFiles map[string]*tmpl // stores all the known pieces from the filesystem, the template, the folders, and all the partials
-	layouts  []string         // the known layouts with their content
+	fsys         fs.ReadDirFS
+	baseTemplate *template.Template
+	allFiles     map[string]*tmpl // stores all the known pieces from the filesystem, the template, the folders, and all the partials
+	layouts      []string         // the known layouts with their content
 }
 
 func (l *loader) filesAndCategorize() ([]string, error) {

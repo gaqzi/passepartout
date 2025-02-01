@@ -76,7 +76,7 @@ func TestPassepartout(t *testing.T) {
 			render:   call{`templates/index.tmpl`, nil},
 			expected: "",
 			expectError: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, `template not found: "templates/index.tmpl"`, "expected a warning that the template was not found")
+				require.ErrorContains(t, err, `failed to read template "templates/index.tmpl"`, "expected a warning that the template was not found")
 			},
 		},
 	}
@@ -138,7 +138,7 @@ func TestPassepartout_RenderInTemplate(t *testing.T) {
 			render:   layoutCall{`templates/layouts/default.tmpl`, `templates/index.tmpl`, nil},
 			expected: "",
 			expectError: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, `template not found: "templates/index.tmpl"`, "expected a warning that the template was not found")
+				require.ErrorContains(t, err, `failed to read template "templates/index.tmpl"`, "expected a warning that the template was not found")
 			},
 		},
 	}
