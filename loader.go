@@ -1,9 +1,12 @@
 package passepartout
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
+	"path"
+	"strings"
 )
 
 type FileWithContent struct {
@@ -75,4 +78,41 @@ func (l *Loader) Page(name string) (*template.Template, error) {
 	}
 
 	return tmplt, nil
+}
+
+type PartialsInFolderOnly struct {
+	FS fs.ReadDirFS
+}
+
+func (p *PartialsInFolderOnly) Load(page string) ([]FileWithContent, error) {
+	ext := path.Ext(page)
+	dirName := strings.TrimSuffix(page, ext)
+
+	var files []FileWithContent
+	err := fs.WalkDir(p.FS, dirName, func(filePath string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+
+		if entry.IsDir() {
+			return nil
+		}
+
+		content, err := fs.ReadFile(p.FS, filePath)
+		if err != nil {
+			return err
+		}
+
+		files = append(files, FileWithContent{Name: filePath, Content: string(content)})
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return files, nil
 }
