@@ -52,74 +52,91 @@ func createTemplate(t *testing.T, base *template.Template, files []passepartout.
 	}
 }
 
-func TestLoader(t *testing.T) {
-	t.Run("with no errors and referencing a partial a useful template is returned", func(t *testing.T) {
-		tmpl := new(templateLoaderMock)
-		tmpl.Test(t)
-		page("test.tmpl", "Hello, world!", tmpl)
-		loader := passepartout.Loader{
-			PartialsFor:    partialsFor(t, "test.tmpl", passepartout.FileWithContent{Name: "_example.tmpl", Content: "- an example partial!"}),
-			TemplateLoader: tmpl,
-			CreateTemplate: createTemplate(
+func errContains(s string) func(t *testing.T, actual *template.Template, err error) {
+	return func(t *testing.T, actual *template.Template, err error) {
+		t.Helper()
+		require.ErrorContains(t, err, s, "expected to have wrapped the error")
+		require.Nil(t, actual, "expected to have returned nil on error")
+	}
+}
+
+func TestLoader_Page(t *testing.T) {
+	noTemplate := func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+		return nil, nil
+	}
+	for _, tc := range []struct {
+		name           string
+		pageName       string
+		partialsFor    func(string) ([]passepartout.FileWithContent, error)
+		loadPage       func(tmplMock *templateLoaderMock)
+		createTemplate func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error)
+		expect         func(t *testing.T, actual *template.Template, err error)
+	}{
+		{
+			name:        "with no errors and referencing a partial a useful template is returned",
+			pageName:    "test.tmpl",
+			partialsFor: partialsFor(t, "test.tmpl", passepartout.FileWithContent{Name: "_example.tmpl", Content: "- an example partial!"}),
+			loadPage:    func(tmplMock *templateLoaderMock) { page("test.tmpl", "Hello, world!", tmplMock) },
+			createTemplate: createTemplate(
 				t,
 				nil,
 				[]passepartout.FileWithContent{{Name: "_example.tmpl", Content: "- an example partial!"}, {Name: "test.tmpl", Content: "Hello, world!"}},
 				template.Must(template.New("test.tmpl").Parse("Greetings world!")),
 			),
-		}
-
-		actual, err := loader.Page("test.tmpl")
-
-		require.NoError(t, err)
-		buf := new(bytes.Buffer)
-		require.NoError(t, actual.Execute(buf, nil), "expected to be able to execute the returned template")
-		require.Equal(t, "Greetings world!", buf.String())
-	})
-
-	t.Run("when loading partials fails, the error is returned", func(t *testing.T) {
-		loader := passepartout.Loader{
-			PartialsFor: func(page string) ([]passepartout.FileWithContent, error) {
+			expect: func(t *testing.T, actual *template.Template, err error) {
+				require.NoError(t, err)
+				buf := new(bytes.Buffer)
+				require.NoError(t, actual.Execute(buf, nil), "expected to be able to execute the returned template")
+				require.Equal(t, "Greetings world!", buf.String())
+			},
+		},
+		{
+			name:     "when loading partials fails, the error is returned",
+			pageName: "test.tmpl",
+			partialsFor: func(page string) ([]passepartout.FileWithContent, error) {
 				return nil, errors.New("uh-oh partial error")
 			},
-			TemplateLoader: new(templateLoaderMock),
-		}
-
-		actual, err := loader.Page("test.tmpl")
-
-		require.ErrorContains(t, err, `failed to collect all files for page "test.tmpl": uh-oh partial error`, "expected to have wrapped the error from PartialsFor")
-		require.Nil(t, actual)
-	})
-
-	t.Run("when loading the template fails, the error is returned", func(t *testing.T) {
-		tmplMock := new(templateLoaderMock)
-		tmplMock.Test(t)
-		tmplMock.On("Page", "test.tmpl").Return([]passepartout.FileWithContent(nil), errors.New("uh-oh template error"))
-		loader := passepartout.Loader{
-			PartialsFor:    partialsFor(t, "test.tmpl"),
-			TemplateLoader: tmplMock,
-		}
-
-		actual, err := loader.Page("test.tmpl")
-
-		require.ErrorContains(t, err, `failed to collect all files for page "test.tmpl": uh-oh template error`, "expected to have wrapped the error from TemplateLoader.Page")
-		require.Nil(t, actual)
-	})
-
-	t.Run("when creating the template fails, the error is returned", func(t *testing.T) {
-		tmplMock := new(templateLoaderMock)
-		tmplMock.Test(t)
-		page("test.tmpl", "Hello, world!", tmplMock)
-		loader := passepartout.Loader{
-			PartialsFor:    partialsFor(t, "test.tmpl"),
-			TemplateLoader: tmplMock,
-			CreateTemplate: func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+			loadPage:       func(tmplMock *templateLoaderMock) {},
+			createTemplate: noTemplate,
+			expect:         errContains(`failed to collect all files for page "test.tmpl": uh-oh partial error`),
+		},
+		{
+			name:        "when loading the template fails, the error is returned",
+			pageName:    "test.tmpl",
+			partialsFor: partialsFor(t, "test.tmpl"),
+			loadPage: func(tmplMock *templateLoaderMock) {
+				tmplMock.On("Page", "test.tmpl").
+					Return([]passepartout.FileWithContent(nil), errors.New("uh-oh template error"))
+			},
+			createTemplate: noTemplate,
+			expect:         errContains(`failed to collect all files for page "test.tmpl": uh-oh template error`),
+		},
+		{
+			name:        "when creating the template fails, the error is returned",
+			pageName:    "test.tmpl",
+			partialsFor: partialsFor(t, "test.tmpl"),
+			loadPage: func(tmplMock *templateLoaderMock) {
+				page("test.tmpl", "Hello, world!", tmplMock)
+			},
+			createTemplate: func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
 				return nil, errors.New("uh-oh create template error")
 			},
-		}
+			expect: errContains(`failed to create template for page "test.tmpl": uh-oh create template error`),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockTmplt := new(templateLoaderMock)
+			mockTmplt.Test(t)
+			tc.loadPage(mockTmplt)
+			loader := passepartout.Loader{
+				PartialsFor:    tc.partialsFor,
+				TemplateLoader: mockTmplt,
+				CreateTemplate: tc.createTemplate,
+			}
 
-		actual, err := loader.Page("test.tmpl")
+			actual, err := loader.Page(tc.pageName)
 
-		require.ErrorContains(t, err, `failed to create template for page "test.tmpl": uh-oh create template error`, "expected to have wrapped the error from CreateTemplate")
-		require.Nil(t, actual)
-	})
+			tc.expect(t, actual, err)
+		})
+	}
 }
