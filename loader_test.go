@@ -222,3 +222,73 @@ func TestPartialsInFolderOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestTemplateByNameLoader_Page(t *testing.T) {
+	t.Run("when the page doesn't exist it returns an error", func(t *testing.T) {
+		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{}}
+
+		actual, err := l.Page("test.tmpl")
+
+		require.ErrorContains(t, err, "failed to read template: open test.tmpl")
+		require.Nil(t, actual, "expected no results when an error returned")
+	})
+
+	t.Run("when the the page exists but at a different path it returns an error", func(t *testing.T) {
+		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+			"subpage/test.tmpl": {Data: []byte("Hello")},
+		}}
+
+		actual, err := l.Page("test.tmpl")
+
+		require.ErrorContains(t, err, "failed to read template: open test.tmpl")
+		require.Nil(t, actual, "expected no results when an error returned")
+	})
+
+	t.Run("when the page exists at the exact path the name and content is returned", func(t *testing.T) {
+		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+			"test.tmpl": {Data: []byte("Hello")},
+		}}
+
+		actual, err := l.Page("test.tmpl")
+
+		require.NoError(t, err)
+		require.Equal(t, []passepartout.FileWithContent{{Name: "test.tmpl", Content: "Hello"}}, actual)
+	})
+}
+
+func TestTemplateByNameLoader_PageInLayout(t *testing.T) {
+	t.Run("when the page doesn't exist it returns an error", func(t *testing.T) {
+		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{}}
+
+		actual, err := l.PageInLayout("test.tmpl", "layout.tmpl")
+
+		require.ErrorContains(t, err, "failed to read template: open test.tmpl")
+		require.Nil(t, actual, "expected no results when an error returned")
+	})
+
+	t.Run("when the layout doesn't exist it returns an error", func(t *testing.T) {
+		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+			"test.tmpl": {Data: []byte("Hello")},
+		}}
+
+		actual, err := l.PageInLayout("test.tmpl", "layout.tmpl")
+
+		require.ErrorContains(t, err, "failed to read layout template: open layout.tmpl")
+		require.Nil(t, actual, "expected no results when an error returned")
+	})
+
+	t.Run("when both the page and layout exists it returns both with no errors", func(t *testing.T) {
+		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+			"test.tmpl":   {Data: []byte("Hello")},
+			"layout.tmpl": {Data: []byte("Layout content")},
+		}}
+
+		actual, err := l.PageInLayout("test.tmpl", "layout.tmpl")
+
+		require.NoError(t, err)
+		require.Equal(t, []passepartout.FileWithContent{
+			{Name: "test.tmpl", Content: "Hello"},
+			{Name: "layout.tmpl", Content: "Layout content"},
+		}, actual)
+	})
+}

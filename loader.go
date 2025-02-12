@@ -116,3 +116,31 @@ func (p *PartialsInFolderOnly) Load(page string) ([]FileWithContent, error) {
 
 	return files, nil
 }
+
+type TemplateByNameLoader struct {
+	FS fs.ReadFileFS
+}
+
+func (t *TemplateByNameLoader) Page(name string) ([]FileWithContent, error) {
+	content, err := t.FS.ReadFile(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template: %w", err)
+	}
+
+	return []FileWithContent{{Name: name, Content: string(content)}}, nil
+}
+
+func (t *TemplateByNameLoader) PageInLayout(name, layout string) ([]FileWithContent, error) {
+	pages, err := t.Page(name)
+	if err != nil {
+		return nil, err
+	}
+
+	layoutContent, err := t.FS.ReadFile(layout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read layout template: %w", err)
+	}
+
+	pages = append(pages, FileWithContent{Name: layout, Content: string(layoutContent)})
+	return pages, nil
+}
