@@ -292,3 +292,45 @@ func TestTemplateByNameLoader_PageInLayout(t *testing.T) {
 		}, actual)
 	})
 }
+
+func TestCreateTemplate(t *testing.T) {
+	t.Run("when there's a problem parsing a template an error is returned", func(t *testing.T) {
+		actual, err := passepartout.CreateTemplate(nil, []passepartout.FileWithContent{{
+			Name:    "invalid.tmpl",
+			Content: "{{ .Missing",
+		}})
+
+		require.ErrorContains(t, err, "failed to parse template")
+		require.Nil(t, actual, "expected no results when an error is returned")
+	})
+
+	t.Run("it has all the passed in files as templates", func(t *testing.T) {
+		baseTemplate := template.New("base")
+		files := []passepartout.FileWithContent{
+			{Name: "file1.tmpl", Content: "Content 1"},
+			{Name: "file2.tmpl", Content: "Content 2"},
+		}
+
+		actual, err := passepartout.CreateTemplate(baseTemplate, files)
+
+		require.NoError(t, err)
+		require.Equal(t, `; defined templates are: "file1.tmpl", "file2.tmpl"`, actual.DefinedTemplates())
+	})
+
+	t.Run("it uses the base template provided as the parent for all new created templates", func(t *testing.T) {
+		baseTemplate := template.New("base").
+			Funcs(template.FuncMap{"customFunc": func() string { return "custom" }})
+		files := []passepartout.FileWithContent{
+			// calling a custom function defined on the base template to show it's used
+			{Name: "file1.tmpl", Content: "{{customFunc}}"},
+		}
+
+		actual, err := passepartout.CreateTemplate(baseTemplate, files)
+
+		require.NoError(t, err)
+		buf := new(bytes.Buffer)
+		err = actual.Lookup("file1.tmpl").Execute(buf, nil)
+		require.NoError(t, err, "expected to execute the template without error")
+		require.Equal(t, "custom", buf.String(), "expected the base template's custom function to be available")
+	})
+}

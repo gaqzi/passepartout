@@ -144,3 +144,24 @@ func (t *TemplateByNameLoader) PageInLayout(name, layout string) ([]FileWithCont
 	pages = append(pages, FileWithContent{Name: layout, Content: string(layoutContent)})
 	return pages, nil
 }
+
+func CreateTemplate(base *template.Template, files []FileWithContent) (*template.Template, error) {
+	var tmplt *template.Template
+	var err error
+	if base != nil {
+		tmplt, err = base.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("failed to copy base template: %w", err)
+		}
+	} else {
+		tmplt = template.New("")
+	}
+
+	for _, file := range files {
+		if _, err := tmplt.New(file.Name).Parse(file.Content); err != nil {
+			return nil, fmt.Errorf("failed to parse template: %w", err)
+		}
+	}
+
+	return tmplt, nil
+}
