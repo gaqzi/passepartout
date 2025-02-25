@@ -33,6 +33,13 @@ func page(name, content string, t *templateLoaderMock) {
 		Return([]passepartout.FileWithContent{{Name: name, Content: content}}, nil)
 }
 
+func pageInLayout(page, layout string, t *templateLoaderMock, templates ...passepartout.FileWithContent) {
+
+	t.
+		On("PageInLayout", page, layout).
+		Return(templates, nil)
+}
+
 func partialsFor(t *testing.T, name string, files ...passepartout.FileWithContent) func(string) ([]passepartout.FileWithContent, error) {
 	t.Helper()
 	return func(page string) ([]passepartout.FileWithContent, error) {
@@ -61,10 +68,11 @@ func errContains(s string) func(t *testing.T, actual *template.Template, err err
 	}
 }
 
+func noTemplate(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+	return nil, nil
+}
+
 func TestLoader_Page(t *testing.T) {
-	noTemplate := func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
-		return nil, nil
-	}
 	for _, tc := range []struct {
 		name           string
 		pageName       string
@@ -138,6 +146,107 @@ func TestLoader_Page(t *testing.T) {
 			actual, err := loader.Page(tc.pageName)
 
 			tc.expect(t, actual, err)
+		})
+	}
+}
+
+func TestLoader_PageInLayout(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		pageName       string
+		layoutName     string
+		partialsFor    func(string) ([]passepartout.FileWithContent, error)
+		loadPage       func(tmplMock *templateLoaderMock)
+		createTemplate func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error)
+		expect         func(t *testing.T, actual *template.Template, err error)
+	}{
+		{
+			name:        "with no errors and referencing a partial a useful template is returned",
+			pageName:    "test.tmpl",
+			layoutName:  "layouts/default.tmpl",
+			partialsFor: partialsFor(t, "test.tmpl", passepartout.FileWithContent{Name: "_example.tmpl", Content: "- an example partial!"}),
+			loadPage: func(tmplMock *templateLoaderMock) {
+				pageInLayout(
+					"test.tmpl",
+					"layouts/default.tmpl",
+					tmplMock,
+					passepartout.FileWithContent{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
+					passepartout.FileWithContent{Name: "test.tmpl", Content: "Hello, world!"},
+				)
+			},
+			createTemplate: createTemplate(
+				t,
+				nil,
+				[]passepartout.FileWithContent{
+					{Name: "_example.tmpl", Content: "- an example partial!"},
+					{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
+					{Name: "test.tmpl", Content: `Hello, world!`},
+				},
+				template.Must(template.New("test.tmpl").Parse("Greetings layouted world!")),
+			),
+			expect: func(t *testing.T, actual *template.Template, err error) {
+				require.NoError(t, err)
+				buf := new(bytes.Buffer)
+				require.NoError(t, actual.Execute(buf, nil), "expected to be able to execute the returned template")
+				require.Equal(t, "Greetings layouted world!", buf.String())
+			},
+		},
+		{
+			name:       "when loading partials fails, the error is returned",
+			pageName:   "test.tmpl",
+			layoutName: "layouts/default.tmpl",
+			partialsFor: func(page string) ([]passepartout.FileWithContent, error) {
+				return nil, errors.New("uh-oh partial error")
+			},
+			loadPage:       func(tmplMock *templateLoaderMock) {},
+			createTemplate: noTemplate,
+			expect:         errContains(`failed to collect partials for page "test.tmpl": uh-oh partial error`),
+		},
+		{
+			name:        "when loading the template fails, the error is returned",
+			pageName:    "test.tmpl",
+			layoutName:  "layouts/default.tmpl",
+			partialsFor: partialsFor(t, "test.tmpl"),
+			loadPage: func(tmplMock *templateLoaderMock) {
+				tmplMock.On("PageInLayout", "test.tmpl", "layouts/default.tmpl").
+					Return([]passepartout.FileWithContent(nil), errors.New("uh-oh template error"))
+			},
+			createTemplate: noTemplate,
+			expect:         errContains(`failed to collect all page "test.tmpl" in layout "layouts/default.tmpl": uh-oh template error`),
+		},
+		{
+			name:        "when creating the template fails, the error is returned",
+			pageName:    "test.tmpl",
+			layoutName:  "layouts/default.tmpl",
+			partialsFor: partialsFor(t, "test.tmpl"),
+			loadPage: func(tmplMock *templateLoaderMock) {
+				pageInLayout(
+					"test.tmpl",
+					"layouts/default.tmpl",
+					tmplMock,
+					passepartout.FileWithContent{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
+					passepartout.FileWithContent{Name: "test.tmpl", Content: "Hello, world!"},
+				)
+			},
+			createTemplate: func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+				return nil, errors.New("uh-oh create template error")
+			},
+			expect: errContains(`failed to create template for page "test.tmpl" in layout "layouts/default.tmpl": uh-oh create template error`),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockTmplt := new(templateLoaderMock)
+			mockTmplt.Test(t)
+			tc.loadPage(mockTmplt)
+			loader := passepartout.Loader{
+				PartialsFor:    tc.partialsFor,
+				TemplateLoader: mockTmplt,
+				CreateTemplate: tc.createTemplate,
+			}
+
+			tmpl, err := loader.InLayout(tc.pageName, tc.layoutName)
+
+			tc.expect(t, tmpl, err)
 		})
 	}
 }
