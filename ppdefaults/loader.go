@@ -1,4 +1,4 @@
-package passepartout
+package ppdefaults
 
 import (
 	"errors"
@@ -14,13 +14,13 @@ type FileWithContent struct {
 	Content string
 }
 
-// PartialLoader loads all the partials for a page/component and returns a slice of FileWithContent.
+// PartialLoader loads all the partials for a template and returns a slice of FileWithContent.
 type PartialLoader func(page string) ([]FileWithContent, error)
 
-// TemplateLoader loads a page/component into a template and knows how to load layouts together for a page/component.
+// TemplateLoader loads a template and knows how to templates for use in a layout.
 type TemplateLoader interface {
-	Page(name string) ([]FileWithContent, error)
-	PageInLayout(name string, layout string) ([]FileWithContent, error)
+	Standalone(name string) ([]FileWithContent, error)
+	InLayout(name string, layout string) ([]FileWithContent, error)
 }
 
 // Templater either creates a new template with name and content or adds that template to an existing collection of templates.
@@ -52,15 +52,15 @@ type Loader struct {
 	CreateTemplate Templater
 }
 
-func (l *Loader) Page(name string) (*template.Template, error) {
-	files, err := flatMap(name, l.PartialsFor, l.TemplateLoader.Page)
+func (l *Loader) Standalone(name string) (*template.Template, error) {
+	files, err := flatMap(name, l.PartialsFor, l.TemplateLoader.Standalone)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect all files for page %q: %w", name, err)
+		return nil, fmt.Errorf("failed to collect all files for %q: %w", name, err)
 	}
 
 	tmplt, err := l.CreateTemplate(nil, files)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create template for page %q: %w", name, err)
+		return nil, fmt.Errorf("failed to create template for %q: %w", name, err)
 	}
 
 	return tmplt, nil
@@ -70,19 +70,19 @@ func (l *Loader) InLayout(page string, layout string) (*template.Template, error
 	var files []FileWithContent
 	partials, err := l.PartialsFor(page)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect partials for page %q: %w", page, err)
+		return nil, fmt.Errorf("failed to collect partials for %q: %w", page, err)
 	}
 	files = append(files, partials...)
 
-	pageFiles, err := l.TemplateLoader.PageInLayout(page, layout)
+	pageFiles, err := l.TemplateLoader.InLayout(page, layout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect all page %q in layout %q: %w", page, layout, err)
+		return nil, fmt.Errorf("failed to collect all for %q in layout %q: %w", page, layout, err)
 	}
 	files = append(files, pageFiles...)
 
 	tmplt, err := l.CreateTemplate(nil, files)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create template for page %q in layout %q: %w", page, layout, err)
+		return nil, fmt.Errorf("failed to create template for %q in layout %q: %w", page, layout, err)
 	}
 
 	return tmplt, nil
@@ -129,7 +129,7 @@ type TemplateByNameLoader struct {
 	FS fs.ReadFileFS
 }
 
-func (t *TemplateByNameLoader) Page(name string) ([]FileWithContent, error) {
+func (t *TemplateByNameLoader) Standalone(name string) ([]FileWithContent, error) {
 	content, err := t.FS.ReadFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read template: %w", err)
@@ -138,8 +138,8 @@ func (t *TemplateByNameLoader) Page(name string) ([]FileWithContent, error) {
 	return []FileWithContent{{Name: name, Content: string(content)}}, nil
 }
 
-func (t *TemplateByNameLoader) PageInLayout(name, layout string) ([]FileWithContent, error) {
-	pages, err := t.Page(name)
+func (t *TemplateByNameLoader) InLayout(name, layout string) ([]FileWithContent, error) {
+	pages, err := t.Standalone(name)
 	if err != nil {
 		return nil, err
 	}

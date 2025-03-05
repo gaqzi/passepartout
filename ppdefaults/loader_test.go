@@ -1,4 +1,4 @@
-package passepartout_test
+package ppdefaults_test
 
 import (
 	"bytes"
@@ -10,51 +10,51 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"passepartout"
+	"passepartout/ppdefaults"
 )
 
 type templateLoaderMock struct {
 	mock.Mock
 }
 
-func (t *templateLoaderMock) Page(name string) ([]passepartout.FileWithContent, error) {
+func (t *templateLoaderMock) Standalone(name string) ([]ppdefaults.FileWithContent, error) {
 	args := t.Called(name)
-	return args.Get(0).([]passepartout.FileWithContent), args.Error(1)
+	return args.Get(0).([]ppdefaults.FileWithContent), args.Error(1)
 }
 
-func (t *templateLoaderMock) PageInLayout(name string, layout string) ([]passepartout.FileWithContent, error) {
+func (t *templateLoaderMock) InLayout(name string, layout string) ([]ppdefaults.FileWithContent, error) {
 	args := t.Called(name, layout)
-	return args.Get(0).([]passepartout.FileWithContent), args.Error(1)
+	return args.Get(0).([]ppdefaults.FileWithContent), args.Error(1)
 }
 
-func page(name, content string, t *templateLoaderMock) {
+func standalone(name, content string, t *templateLoaderMock) {
 	t.
-		On("Page", name).
-		Return([]passepartout.FileWithContent{{Name: name, Content: content}}, nil)
+		On("Standalone", name).
+		Return([]ppdefaults.FileWithContent{{Name: name, Content: content}}, nil)
 }
 
-func pageInLayout(page, layout string, t *templateLoaderMock, templates ...passepartout.FileWithContent) {
+func inLayout(page, layout string, t *templateLoaderMock, templates ...ppdefaults.FileWithContent) {
 
 	t.
-		On("PageInLayout", page, layout).
+		On("InLayout", page, layout).
 		Return(templates, nil)
 }
 
-func partialsFor(t *testing.T, name string, files ...passepartout.FileWithContent) func(string) ([]passepartout.FileWithContent, error) {
+func partialsFor(t *testing.T, name string, files ...ppdefaults.FileWithContent) func(string) ([]ppdefaults.FileWithContent, error) {
 	t.Helper()
-	return func(page string) ([]passepartout.FileWithContent, error) {
+	return func(page string) ([]ppdefaults.FileWithContent, error) {
 		t.Helper()
-		require.Equal(t, name, page, "expected to have called PartialsFor with the name passed to Page")
+		require.Equal(t, name, page, "expected to have called PartialsFor with the name passed to Standalone")
 
 		return files, nil
 	}
 }
 
-func createTemplate(t *testing.T, base *template.Template, files []passepartout.FileWithContent, tmpl *template.Template) func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+func createTemplate(t *testing.T, base *template.Template, files []ppdefaults.FileWithContent, tmpl *template.Template) func(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error) {
 	t.Helper()
-	return func(inBase *template.Template, inFiles []passepartout.FileWithContent) (*template.Template, error) {
+	return func(inBase *template.Template, inFiles []ppdefaults.FileWithContent) (*template.Template, error) {
 		require.Equal(t, base, inBase, "expected to have called CreateTemplate with the base template")
-		require.Equal(t, files, inFiles, "expected to have called CreateTemplate with the files from PartialsFor and TemplateLoader.Page")
+		require.Equal(t, files, inFiles, "expected to have called CreateTemplate with the files from PartialsFor and TemplateLoader.Standalone")
 
 		return tmpl, nil
 	}
@@ -68,28 +68,28 @@ func errContains(s string) func(t *testing.T, actual *template.Template, err err
 	}
 }
 
-func noTemplate(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+func noTemplate(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error) {
 	return nil, nil
 }
 
-func TestLoader_Page(t *testing.T) {
+func TestLoader_Standalone(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		pageName       string
-		partialsFor    func(string) ([]passepartout.FileWithContent, error)
+		partialsFor    func(string) ([]ppdefaults.FileWithContent, error)
 		loadPage       func(tmplMock *templateLoaderMock)
-		createTemplate func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error)
+		createTemplate func(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error)
 		expect         func(t *testing.T, actual *template.Template, err error)
 	}{
 		{
 			name:        "with no errors and referencing a partial a useful template is returned",
 			pageName:    "test.tmpl",
-			partialsFor: partialsFor(t, "test.tmpl", passepartout.FileWithContent{Name: "_example.tmpl", Content: "- an example partial!"}),
-			loadPage:    func(tmplMock *templateLoaderMock) { page("test.tmpl", "Hello, world!", tmplMock) },
+			partialsFor: partialsFor(t, "test.tmpl", ppdefaults.FileWithContent{Name: "_example.tmpl", Content: "- an example partial!"}),
+			loadPage:    func(tmplMock *templateLoaderMock) { standalone("test.tmpl", "Hello, world!", tmplMock) },
 			createTemplate: createTemplate(
 				t,
 				nil,
-				[]passepartout.FileWithContent{{Name: "_example.tmpl", Content: "- an example partial!"}, {Name: "test.tmpl", Content: "Hello, world!"}},
+				[]ppdefaults.FileWithContent{{Name: "_example.tmpl", Content: "- an example partial!"}, {Name: "test.tmpl", Content: "Hello, world!"}},
 				template.Must(template.New("test.tmpl").Parse("Greetings world!")),
 			),
 			expect: func(t *testing.T, actual *template.Template, err error) {
@@ -102,82 +102,82 @@ func TestLoader_Page(t *testing.T) {
 		{
 			name:     "when loading partials fails, the error is returned",
 			pageName: "test.tmpl",
-			partialsFor: func(page string) ([]passepartout.FileWithContent, error) {
+			partialsFor: func(page string) ([]ppdefaults.FileWithContent, error) {
 				return nil, errors.New("uh-oh partial error")
 			},
 			loadPage:       func(tmplMock *templateLoaderMock) {},
 			createTemplate: noTemplate,
-			expect:         errContains(`failed to collect all files for page "test.tmpl": uh-oh partial error`),
+			expect:         errContains(`failed to collect all files for "test.tmpl": uh-oh partial error`),
 		},
 		{
 			name:        "when loading the template fails, the error is returned",
 			pageName:    "test.tmpl",
 			partialsFor: partialsFor(t, "test.tmpl"),
 			loadPage: func(tmplMock *templateLoaderMock) {
-				tmplMock.On("Page", "test.tmpl").
-					Return([]passepartout.FileWithContent(nil), errors.New("uh-oh template error"))
+				tmplMock.On("Standalone", "test.tmpl").
+					Return([]ppdefaults.FileWithContent(nil), errors.New("uh-oh template error"))
 			},
 			createTemplate: noTemplate,
-			expect:         errContains(`failed to collect all files for page "test.tmpl": uh-oh template error`),
+			expect:         errContains(`failed to collect all files for "test.tmpl": uh-oh template error`),
 		},
 		{
 			name:        "when creating the template fails, the error is returned",
 			pageName:    "test.tmpl",
 			partialsFor: partialsFor(t, "test.tmpl"),
 			loadPage: func(tmplMock *templateLoaderMock) {
-				page("test.tmpl", "Hello, world!", tmplMock)
+				standalone("test.tmpl", "Hello, world!", tmplMock)
 			},
-			createTemplate: func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+			createTemplate: func(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error) {
 				return nil, errors.New("uh-oh create template error")
 			},
-			expect: errContains(`failed to create template for page "test.tmpl": uh-oh create template error`),
+			expect: errContains(`failed to create template for "test.tmpl": uh-oh create template error`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mockTmplt := new(templateLoaderMock)
 			mockTmplt.Test(t)
 			tc.loadPage(mockTmplt)
-			loader := passepartout.Loader{
+			loader := ppdefaults.Loader{
 				PartialsFor:    tc.partialsFor,
 				TemplateLoader: mockTmplt,
 				CreateTemplate: tc.createTemplate,
 			}
 
-			actual, err := loader.Page(tc.pageName)
+			actual, err := loader.Standalone(tc.pageName)
 
 			tc.expect(t, actual, err)
 		})
 	}
 }
 
-func TestLoader_PageInLayout(t *testing.T) {
+func TestLoader_InLayout(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		pageName       string
 		layoutName     string
-		partialsFor    func(string) ([]passepartout.FileWithContent, error)
+		partialsFor    func(string) ([]ppdefaults.FileWithContent, error)
 		loadPage       func(tmplMock *templateLoaderMock)
-		createTemplate func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error)
+		createTemplate func(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error)
 		expect         func(t *testing.T, actual *template.Template, err error)
 	}{
 		{
 			name:        "with no errors and referencing a partial a useful template is returned",
 			pageName:    "test.tmpl",
 			layoutName:  "layouts/default.tmpl",
-			partialsFor: partialsFor(t, "test.tmpl", passepartout.FileWithContent{Name: "_example.tmpl", Content: "- an example partial!"}),
+			partialsFor: partialsFor(t, "test.tmpl", ppdefaults.FileWithContent{Name: "_example.tmpl", Content: "- an example partial!"}),
 			loadPage: func(tmplMock *templateLoaderMock) {
-				pageInLayout(
+				inLayout(
 					"test.tmpl",
 					"layouts/default.tmpl",
 					tmplMock,
-					passepartout.FileWithContent{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
-					passepartout.FileWithContent{Name: "test.tmpl", Content: "Hello, world!"},
+					ppdefaults.FileWithContent{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
+					ppdefaults.FileWithContent{Name: "test.tmpl", Content: "Hello, world!"},
 				)
 			},
 			createTemplate: createTemplate(
 				t,
 				nil,
-				[]passepartout.FileWithContent{
+				[]ppdefaults.FileWithContent{
 					{Name: "_example.tmpl", Content: "- an example partial!"},
 					{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
 					{Name: "test.tmpl", Content: `Hello, world!`},
@@ -195,12 +195,12 @@ func TestLoader_PageInLayout(t *testing.T) {
 			name:       "when loading partials fails, the error is returned",
 			pageName:   "test.tmpl",
 			layoutName: "layouts/default.tmpl",
-			partialsFor: func(page string) ([]passepartout.FileWithContent, error) {
+			partialsFor: func(page string) ([]ppdefaults.FileWithContent, error) {
 				return nil, errors.New("uh-oh partial error")
 			},
 			loadPage:       func(tmplMock *templateLoaderMock) {},
 			createTemplate: noTemplate,
-			expect:         errContains(`failed to collect partials for page "test.tmpl": uh-oh partial error`),
+			expect:         errContains(`failed to collect partials for "test.tmpl": uh-oh partial error`),
 		},
 		{
 			name:        "when loading the template fails, the error is returned",
@@ -208,11 +208,11 @@ func TestLoader_PageInLayout(t *testing.T) {
 			layoutName:  "layouts/default.tmpl",
 			partialsFor: partialsFor(t, "test.tmpl"),
 			loadPage: func(tmplMock *templateLoaderMock) {
-				tmplMock.On("PageInLayout", "test.tmpl", "layouts/default.tmpl").
-					Return([]passepartout.FileWithContent(nil), errors.New("uh-oh template error"))
+				tmplMock.On("InLayout", "test.tmpl", "layouts/default.tmpl").
+					Return([]ppdefaults.FileWithContent(nil), errors.New("uh-oh template error"))
 			},
 			createTemplate: noTemplate,
-			expect:         errContains(`failed to collect all page "test.tmpl" in layout "layouts/default.tmpl": uh-oh template error`),
+			expect:         errContains(`failed to collect all for "test.tmpl" in layout "layouts/default.tmpl": uh-oh template error`),
 		},
 		{
 			name:        "when creating the template fails, the error is returned",
@@ -220,25 +220,25 @@ func TestLoader_PageInLayout(t *testing.T) {
 			layoutName:  "layouts/default.tmpl",
 			partialsFor: partialsFor(t, "test.tmpl"),
 			loadPage: func(tmplMock *templateLoaderMock) {
-				pageInLayout(
+				inLayout(
 					"test.tmpl",
 					"layouts/default.tmpl",
 					tmplMock,
-					passepartout.FileWithContent{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
-					passepartout.FileWithContent{Name: "test.tmpl", Content: "Hello, world!"},
+					ppdefaults.FileWithContent{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
+					ppdefaults.FileWithContent{Name: "test.tmpl", Content: "Hello, world!"},
 				)
 			},
-			createTemplate: func(base *template.Template, files []passepartout.FileWithContent) (*template.Template, error) {
+			createTemplate: func(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error) {
 				return nil, errors.New("uh-oh create template error")
 			},
-			expect: errContains(`failed to create template for page "test.tmpl" in layout "layouts/default.tmpl": uh-oh create template error`),
+			expect: errContains(`failed to create template for "test.tmpl" in layout "layouts/default.tmpl": uh-oh create template error`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mockTmplt := new(templateLoaderMock)
 			mockTmplt.Test(t)
 			tc.loadPage(mockTmplt)
-			loader := passepartout.Loader{
+			loader := ppdefaults.Loader{
 				PartialsFor:    tc.partialsFor,
 				TemplateLoader: mockTmplt,
 				CreateTemplate: tc.createTemplate,
@@ -257,7 +257,7 @@ func TestPartialsInFolderOnly(t *testing.T) {
 		name     string
 		pageName string
 		fs       fstest.MapFS
-		expect   func(t *testing.T, actual []passepartout.FileWithContent, err error)
+		expect   func(t *testing.T, actual []ppdefaults.FileWithContent, err error)
 	}{
 		{
 			name:     "returns all the files in the folder named after the name without extension",
@@ -266,11 +266,11 @@ func TestPartialsInFolderOnly(t *testing.T) {
 				"test/_item.tmpl":  {Data: []byte("item partial")},
 				"test/_item2.tmpl": {Data: []byte("item partial 2")},
 			},
-			expect: func(t *testing.T, actual []passepartout.FileWithContent, err error) {
+			expect: func(t *testing.T, actual []ppdefaults.FileWithContent, err error) {
 				require.NoError(t, err)
 				require.Equal(
 					t,
-					[]passepartout.FileWithContent{
+					[]ppdefaults.FileWithContent{
 						{Name: "test/_item.tmpl", Content: "item partial"},
 						{Name: "test/_item2.tmpl", Content: "item partial 2"},
 					},
@@ -287,11 +287,11 @@ func TestPartialsInFolderOnly(t *testing.T) {
 			fs: fstest.MapFS{
 				"test.tmpl/_item.tmpl": {Data: []byte("item partial")},
 			},
-			expect: func(t *testing.T, actual []passepartout.FileWithContent, err error) {
+			expect: func(t *testing.T, actual []ppdefaults.FileWithContent, err error) {
 				require.NoError(t, err)
 				require.Equal(
 					t,
-					[]passepartout.FileWithContent{
+					[]ppdefaults.FileWithContent{
 						{Name: "test.tmpl/_item.tmpl", Content: "item partial"},
 					},
 					actual,
@@ -303,9 +303,9 @@ func TestPartialsInFolderOnly(t *testing.T) {
 			name:     "returns no partials when none matches partials available",
 			pageName: "test.tmpl",
 			fs:       fstest.MapFS{},
-			expect: func(t *testing.T, actual []passepartout.FileWithContent, err error) {
+			expect: func(t *testing.T, actual []ppdefaults.FileWithContent, err error) {
 				require.NoError(t, err)
-				require.Equal(t, []passepartout.FileWithContent(nil), actual, "expected to have an empty list when no partials available")
+				require.Equal(t, []ppdefaults.FileWithContent(nil), actual, "expected to have an empty list when no partials available")
 			},
 		},
 		{
@@ -316,14 +316,14 @@ func TestPartialsInFolderOnly(t *testing.T) {
 				"something-else/_item2.tmpl": {Data: []byte("item partial 2")},
 				"_samefolder.tmpl":           {Data: []byte("item partial 3")},
 			},
-			expect: func(t *testing.T, actual []passepartout.FileWithContent, err error) {
+			expect: func(t *testing.T, actual []ppdefaults.FileWithContent, err error) {
 				require.NoError(t, err)
-				require.Equal(t, []passepartout.FileWithContent(nil), actual, "expected to not have loaded any of the partials not in the expected folder")
+				require.Equal(t, []ppdefaults.FileWithContent(nil), actual, "expected to not have loaded any of the partials not in the expected folder")
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			loader := passepartout.PartialsInFolderOnly{FS: tc.fs}
+			loader := ppdefaults.PartialsInFolderOnly{FS: tc.fs}
 
 			actual, err := loader.Load(tc.pageName)
 
@@ -332,70 +332,70 @@ func TestPartialsInFolderOnly(t *testing.T) {
 	}
 }
 
-func TestTemplateByNameLoader_Page(t *testing.T) {
-	t.Run("when the page doesn't exist it returns an error", func(t *testing.T) {
-		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{}}
+func TestTemplateByNameLoader_Standalone(t *testing.T) {
+	t.Run("when the file doesn't exist it returns an error", func(t *testing.T) {
+		l := ppdefaults.TemplateByNameLoader{FS: fstest.MapFS{}}
 
-		actual, err := l.Page("test.tmpl")
+		actual, err := l.Standalone("test.tmpl")
 
 		require.ErrorContains(t, err, "failed to read template: open test.tmpl")
 		require.Nil(t, actual, "expected no results when an error returned")
 	})
 
-	t.Run("when the the page exists but at a different path it returns an error", func(t *testing.T) {
-		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+	t.Run("when the the file exists but at a different path it returns an error", func(t *testing.T) {
+		l := ppdefaults.TemplateByNameLoader{FS: fstest.MapFS{
 			"subpage/test.tmpl": {Data: []byte("Hello")},
 		}}
 
-		actual, err := l.Page("test.tmpl")
+		actual, err := l.Standalone("test.tmpl")
 
 		require.ErrorContains(t, err, "failed to read template: open test.tmpl")
 		require.Nil(t, actual, "expected no results when an error returned")
 	})
 
-	t.Run("when the page exists at the exact path the name and content is returned", func(t *testing.T) {
-		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+	t.Run("when the file exists at the exact path the name and content is returned", func(t *testing.T) {
+		l := ppdefaults.TemplateByNameLoader{FS: fstest.MapFS{
 			"test.tmpl": {Data: []byte("Hello")},
 		}}
 
-		actual, err := l.Page("test.tmpl")
+		actual, err := l.Standalone("test.tmpl")
 
 		require.NoError(t, err)
-		require.Equal(t, []passepartout.FileWithContent{{Name: "test.tmpl", Content: "Hello"}}, actual)
+		require.Equal(t, []ppdefaults.FileWithContent{{Name: "test.tmpl", Content: "Hello"}}, actual)
 	})
 }
 
-func TestTemplateByNameLoader_PageInLayout(t *testing.T) {
-	t.Run("when the page doesn't exist it returns an error", func(t *testing.T) {
-		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{}}
+func TestTemplateByNameLoader_InLayout(t *testing.T) {
+	t.Run("when the file doesn't exist it returns an error", func(t *testing.T) {
+		l := ppdefaults.TemplateByNameLoader{FS: fstest.MapFS{}}
 
-		actual, err := l.PageInLayout("test.tmpl", "layout.tmpl")
+		actual, err := l.InLayout("test.tmpl", "layout.tmpl")
 
 		require.ErrorContains(t, err, "failed to read template: open test.tmpl")
 		require.Nil(t, actual, "expected no results when an error returned")
 	})
 
 	t.Run("when the layout doesn't exist it returns an error", func(t *testing.T) {
-		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+		l := ppdefaults.TemplateByNameLoader{FS: fstest.MapFS{
 			"test.tmpl": {Data: []byte("Hello")},
 		}}
 
-		actual, err := l.PageInLayout("test.tmpl", "layout.tmpl")
+		actual, err := l.InLayout("test.tmpl", "layout.tmpl")
 
 		require.ErrorContains(t, err, "failed to read layout template: open layout.tmpl")
 		require.Nil(t, actual, "expected no results when an error returned")
 	})
 
-	t.Run("when both the page and layout exists it returns the page wrapped for use with the layout", func(t *testing.T) {
-		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
+	t.Run("when both the file and layout exists it returns the template wrapped for use within the layout", func(t *testing.T) {
+		l := ppdefaults.TemplateByNameLoader{FS: fstest.MapFS{
 			"test.tmpl":   {Data: []byte("Hello")},
 			"layout.tmpl": {Data: []byte("Layout content")},
 		}}
 
-		actual, err := l.PageInLayout("test.tmpl", "layout.tmpl")
+		actual, err := l.InLayout("test.tmpl", "layout.tmpl")
 
 		require.NoError(t, err)
-		require.Equal(t, []passepartout.FileWithContent{
+		require.Equal(t, []ppdefaults.FileWithContent{
 			// IMPORTANT: the layout is first so any "define"s made in the layout doesn't override ones made in subsequent templates.
 			{Name: "layout.tmpl", Content: "Layout content"},
 			{Name: "test.tmpl", Content: `{{ define "content" }}Hello{{ end }}`},
@@ -405,7 +405,7 @@ func TestTemplateByNameLoader_PageInLayout(t *testing.T) {
 
 func TestCreateTemplate(t *testing.T) {
 	t.Run("when there's a problem parsing a template an error is returned", func(t *testing.T) {
-		actual, err := passepartout.CreateTemplate(nil, []passepartout.FileWithContent{{
+		actual, err := ppdefaults.CreateTemplate(nil, []ppdefaults.FileWithContent{{
 			Name:    "invalid.tmpl",
 			Content: "{{ .Missing",
 		}})
@@ -416,12 +416,12 @@ func TestCreateTemplate(t *testing.T) {
 
 	t.Run("it has all the passed in files as templates", func(t *testing.T) {
 		baseTemplate := template.New("base")
-		files := []passepartout.FileWithContent{
+		files := []ppdefaults.FileWithContent{
 			{Name: "file1.tmpl", Content: "Content 1"},
 			{Name: "file2.tmpl", Content: "Content 2"},
 		}
 
-		actual, err := passepartout.CreateTemplate(baseTemplate, files)
+		actual, err := ppdefaults.CreateTemplate(baseTemplate, files)
 
 		require.NoError(t, err)
 		require.Equal(t, `; defined templates are: "file1.tmpl", "file2.tmpl"`, actual.DefinedTemplates())
@@ -430,12 +430,12 @@ func TestCreateTemplate(t *testing.T) {
 	t.Run("it uses the base template provided as the parent for all new created templates", func(t *testing.T) {
 		baseTemplate := template.New("base").
 			Funcs(template.FuncMap{"customFunc": func() string { return "custom" }})
-		files := []passepartout.FileWithContent{
+		files := []ppdefaults.FileWithContent{
 			// calling a custom function defined on the base template to show it's used
 			{Name: "file1.tmpl", Content: "{{customFunc}}"},
 		}
 
-		actual, err := passepartout.CreateTemplate(baseTemplate, files)
+		actual, err := ppdefaults.CreateTemplate(baseTemplate, files)
 
 		require.NoError(t, err)
 		buf := new(bytes.Buffer)

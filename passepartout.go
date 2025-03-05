@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+
+	"passepartout/ppdefaults"
 )
 
 type readDirReadFileFS interface {
@@ -30,7 +32,7 @@ func FSWithoutPrefix(fs_ readDirReadFileFS, prefix string) (readDirReadFileFS, e
 }
 
 type passepartout struct {
-	loader *Loader
+	loader *ppdefaults.Loader
 }
 
 // Load initializes a template manager to load and render templates within a passed in filesystem.
@@ -63,18 +65,18 @@ type passepartout struct {
 //	passepartout := passepartout.Load(os.DirFS("templates/")) // the path to the base folder, removes the first part so all templates are referenced out of this folder
 //	str, err := passepartout.Render("index/main.tmpl", map[string]any{"Items": []string{"Hello", "World"}})  // renders the index/main.tmpl using the index/_main/_item.tmpl partial and returns the result as a string
 func Load(fs_ readDirReadFileFS) (*passepartout, error) {
-	partials := &PartialsInFolderOnly{FS: fs_}
-	l := Loader{
+	partials := &ppdefaults.PartialsInFolderOnly{FS: fs_}
+	l := ppdefaults.Loader{
 		PartialsFor:    partials.Load,
-		TemplateLoader: &TemplateByNameLoader{FS: fs_},
-		CreateTemplate: CreateTemplate,
+		TemplateLoader: &ppdefaults.TemplateByNameLoader{FS: fs_},
+		CreateTemplate: ppdefaults.CreateTemplate,
 	}
 
 	return &passepartout{loader: &l}, nil
 }
 
 func (p *passepartout) Render(out io.Writer, name string, data any) error {
-	t, err := p.loader.Page(name)
+	t, err := p.loader.Standalone(name)
 	if err != nil {
 		return err
 	}

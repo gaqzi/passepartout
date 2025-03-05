@@ -38,7 +38,7 @@ func TestPassepartout_Render(t *testing.T) {
 			expectError: noError,
 		},
 		{
-			name: "A template with a partial in a subfolder named after the page is renderable",
+			name: "A template with a partial in a subfolder named after the template is renderable",
 			fs: fstest.MapFS{
 				"templates/index.tmpl":       {Data: []byte("body\n {{ template \"templates/index/_item.tmpl\" . }}")},
 				"templates/index/_item.tmpl": {Data: []byte("item partial")},
@@ -48,7 +48,7 @@ func TestPassepartout_Render(t *testing.T) {
 			expectError: noError,
 		},
 		{
-			name: "A template with a partial in a different subfolder than the page is not renderable",
+			name: "A partial in a different subfolder than the template is not renderable",
 			fs: fstest.MapFS{
 				"templates/index.tmpl":      {Data: []byte("body\n {{ template \"_item.tmpl\" . }}")},
 				"templates/show/_item.tmpl": {Data: []byte("item partial")},
@@ -61,7 +61,7 @@ func TestPassepartout_Render(t *testing.T) {
 			},
 		},
 		{
-			name:     "When the page doesn't exist we get an error",
+			name:     "When the template doesn't exist we get an error",
 			fs:       fstest.MapFS{},
 			render:   call{`templates/index.tmpl`, nil},
 			expected: "",
@@ -91,7 +91,7 @@ type layoutCall struct {
 	data   any
 }
 
-func TestPassepartout_RenderInTemplate(t *testing.T) {
+func TestPassepartout_RenderInLayout(t *testing.T) {
 	testCases := []struct {
 		name        string
 		fs          fstest.MapFS
@@ -123,7 +123,7 @@ func TestPassepartout_RenderInTemplate(t *testing.T) {
 			expectError: noError,
 		},
 		{
-			name:     "When the page doesn't exist we get an error",
+			name:     "When the template doesn't exist we get an error",
 			fs:       fstest.MapFS{},
 			render:   layoutCall{`templates/layouts/default.tmpl`, `templates/index.tmpl`, nil},
 			expected: "",
