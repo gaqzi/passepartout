@@ -251,6 +251,54 @@ func TestLoader_InLayout(t *testing.T) {
 	}
 }
 
+func TestLoader_TemplateConfig(t *testing.T) {
+	t.Run("in Standalone is passed into CreateTemplate on use", func(t *testing.T) {
+		mockTmplt := new(templateLoaderMock)
+		mockTmplt.Test(t)
+		standalone("test.tmpl", "Hello, world!", mockTmplt)
+		expectedTemplate := template.Must(template.New("template config").Parse("yohooo~!"))
+		loader := ppdefaults.Loader{
+			TemplateConfig: expectedTemplate,
+			PartialsFor:    partialsFor(t, "test.tmpl"),
+			TemplateLoader: mockTmplt,
+			CreateTemplate: func(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error) {
+				require.Equal(t, expectedTemplate, base, "expected to have received the configured expected template when creating templates")
+				return nil, nil
+			},
+		}
+
+		_, err := loader.Standalone("test.tmpl")
+
+		require.NoError(t, err, "expected to have no error and that any assertions are happening inside [CreateTemplate]")
+	})
+
+	t.Run("in InLayout is passed into CreateTemplate on use", func(t *testing.T) {
+		mockTmplt := new(templateLoaderMock)
+		mockTmplt.Test(t)
+		inLayout(
+			"test.tmpl",
+			"layouts/default.tmpl",
+			mockTmplt,
+			ppdefaults.FileWithContent{Name: "layouts/default.tmpl", Content: `HEADER {% define "content" %}CONTENT{% end %} FOOTER`},
+			ppdefaults.FileWithContent{Name: "test.tmpl", Content: "Hello, world!"},
+		)
+		expectedTemplate := template.Must(template.New("template config").Parse("yohooo~!"))
+		loader := ppdefaults.Loader{
+			TemplateConfig: expectedTemplate,
+			PartialsFor:    partialsFor(t, "test.tmpl"),
+			TemplateLoader: mockTmplt,
+			CreateTemplate: func(base *template.Template, files []ppdefaults.FileWithContent) (*template.Template, error) {
+				require.Equal(t, expectedTemplate, base, "expected to have received the configured expected template when creating templates")
+				return nil, nil
+			},
+		}
+
+		_, err := loader.InLayout("test.tmpl", "layouts/default.tmpl")
+
+		require.NoError(t, err, "expected to have no error and that any assertions are happening inside [CreateTemplate]")
+	})
+}
+
 func TestPartialsInFolderOnly(t *testing.T) {
 
 	for _, tc := range []struct {

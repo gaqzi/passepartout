@@ -47,6 +47,9 @@ func flatMap(name string, fns ...func(string) ([]FileWithContent, error)) ([]Fil
 }
 
 type Loader struct {
+	// TemplateConfig is used as a base when creating new templates from a collection of files.
+	// See [template.Template.Funcs] and [template.Template.Option] for what often is configured.
+	TemplateConfig *template.Template
 	PartialsFor    PartialLoader
 	TemplateLoader TemplateLoader
 	CreateTemplate Templater
@@ -58,7 +61,7 @@ func (l *Loader) Standalone(name string) (*template.Template, error) {
 		return nil, fmt.Errorf("failed to collect all files for %q: %w", name, err)
 	}
 
-	tmplt, err := l.CreateTemplate(nil, files)
+	tmplt, err := l.CreateTemplate(l.TemplateConfig, files)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create template for %q: %w", name, err)
 	}
@@ -80,7 +83,7 @@ func (l *Loader) InLayout(page string, layout string) (*template.Template, error
 	}
 	files = append(files, pageFiles...)
 
-	tmplt, err := l.CreateTemplate(nil, files)
+	tmplt, err := l.CreateTemplate(l.TemplateConfig, files)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create template for %q in layout %q: %w", page, layout, err)
 	}
