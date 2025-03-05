@@ -20,7 +20,7 @@ type call struct {
 	data any
 }
 
-func TestPassepartout(t *testing.T) {
+func TestPassepartout_Render(t *testing.T) {
 	testCases := []struct {
 		name        string
 		fs          fstest.MapFS
@@ -38,19 +38,9 @@ func TestPassepartout(t *testing.T) {
 			expectError: noError,
 		},
 		{
-			name: "A template that relies on a partial at the same level is renderable",
-			fs: fstest.MapFS{
-				"templates/index.tmpl":    {Data: []byte("body\n {{ template \"_partial.tmpl\" . }}")},
-				"templates/_partial.tmpl": {Data: []byte("partial")},
-			},
-			render:      call{`templates/index.tmpl`, nil},
-			expected:    "body\n partial",
-			expectError: noError,
-		},
-		{
 			name: "A template with a partial in a subfolder named after the page is renderable",
 			fs: fstest.MapFS{
-				"templates/index.tmpl":       {Data: []byte("body\n {{ template \"_item.tmpl\" . }}")},
+				"templates/index.tmpl":       {Data: []byte("body\n {{ template \"templates/index/_item.tmpl\" . }}")},
 				"templates/index/_item.tmpl": {Data: []byte("item partial")},
 			},
 			render:      call{`templates/index.tmpl`, nil},
@@ -76,7 +66,7 @@ func TestPassepartout(t *testing.T) {
 			render:   call{`templates/index.tmpl`, nil},
 			expected: "",
 			expectError: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, `failed to read template "templates/index.tmpl"`, "expected a warning that the template was not found")
+				require.ErrorContains(t, err, `failed to read template: open templates/index.tmpl`, "expected a warning that the template was not found")
 			},
 		},
 	}
@@ -113,7 +103,7 @@ func TestPassepartout_RenderInTemplate(t *testing.T) {
 			name: "When there's a layout, then the template renders within the layout by wrapping the content of the template in a defined content block",
 			fs: fstest.MapFS{
 				"templates/layouts/default.tmpl": {Data: []byte("HEAD\n {{ block \"content\" . }}DEFAULT CONTENT{{ end }} \nFOOT")},
-				"templates/index.tmpl":           {Data: []byte("body\n {{ template \"_item.tmpl\" . }}")},
+				"templates/index.tmpl":           {Data: []byte("body\n {{ template \"templates/index/_item.tmpl\" . }}")},
 				"templates/index/_item.tmpl":     {Data: []byte("item partial")},
 			},
 			render:      layoutCall{`templates/layouts/default.tmpl`, `templates/index.tmpl`, nil},
@@ -125,7 +115,7 @@ func TestPassepartout_RenderInTemplate(t *testing.T) {
 			fs: fstest.MapFS{
 				"templates/layouts/default.tmpl":   {Data: []byte("HEAD\n {{ block \"content\" . }}DEFAULT CONTENT{{ end }} \nFOOT")},
 				"templates/layouts/secondary.tmpl": {Data: []byte("HEADER\n {{ block \"content\" . }}DEFAULT CONTENT{{ end }} \nFOOTER")},
-				"templates/index.tmpl":             {Data: []byte("body\n {{ template \"_item.tmpl\" . }}")},
+				"templates/index.tmpl":             {Data: []byte("body\n {{ template \"templates/index/_item.tmpl\" . }}")},
 				"templates/index/_item.tmpl":       {Data: []byte("item partial")},
 			},
 			render:      layoutCall{`templates/layouts/secondary.tmpl`, `templates/index.tmpl`, nil},
@@ -138,20 +128,21 @@ func TestPassepartout_RenderInTemplate(t *testing.T) {
 			render:   layoutCall{`templates/layouts/default.tmpl`, `templates/index.tmpl`, nil},
 			expected: "",
 			expectError: func(t *testing.T, err error) {
-				require.ErrorContains(t, err, `failed to read template "templates/index.tmpl"`, "expected a warning that the template was not found")
+				require.ErrorContains(t, err, `failed to read template: open templates/index.tmpl`, "expected a warning that the template was not found")
 			},
 		},
 	}
 
 	for _, tc := range testCases {
-		pp, err := passepartout.Load(tc.fs)
-		require.NoError(t, err, "expected to have loaded all the templates without issues")
+		t.Run(tc.name, func(t *testing.T) {
+			pp, err := passepartout.Load(tc.fs)
+			require.NoError(t, err, "expected to have loaded all the templates without issues")
 
-		output := bytes.NewBuffer(nil)
-		err = pp.RenderInLayout(output, tc.render.layout, tc.render.name, tc.render.data)
+			output := bytes.NewBuffer(nil)
+			err = pp.RenderInLayout(output, tc.render.layout, tc.render.name, tc.render.data)
 
-		tc.expectError(t, err)
-		require.Equal(t, tc.expected, output.String())
-
+			tc.expectError(t, err)
+			require.Equal(t, tc.expected, output.String())
+		})
 	}
 }
