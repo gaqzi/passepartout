@@ -386,7 +386,7 @@ func TestTemplateByNameLoader_PageInLayout(t *testing.T) {
 		require.Nil(t, actual, "expected no results when an error returned")
 	})
 
-	t.Run("when both the page and layout exists it returns both with no errors", func(t *testing.T) {
+	t.Run("when both the page and layout exists it returns the page wrapped for use with the layout", func(t *testing.T) {
 		l := passepartout.TemplateByNameLoader{FS: fstest.MapFS{
 			"test.tmpl":   {Data: []byte("Hello")},
 			"layout.tmpl": {Data: []byte("Layout content")},
@@ -396,8 +396,9 @@ func TestTemplateByNameLoader_PageInLayout(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, []passepartout.FileWithContent{
-			{Name: "test.tmpl", Content: "Hello"},
+			// IMPORTANT: the layout is first so any "define"s made in the layout doesn't override ones made in subsequent templates.
 			{Name: "layout.tmpl", Content: "Layout content"},
+			{Name: "test.tmpl", Content: `{{ define "content" }}Hello{{ end }}`},
 		}, actual)
 	})
 }

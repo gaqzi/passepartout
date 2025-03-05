@@ -144,12 +144,19 @@ func (t *TemplateByNameLoader) PageInLayout(name, layout string) ([]FileWithCont
 		return nil, err
 	}
 
+	for i := 0; i < len(pages); i++ {
+		pages[i].Content = `{{ define "content" }}` + pages[i].Content + `{{ end }}`
+	}
+
 	layoutContent, err := t.FS.ReadFile(layout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read layout template: %w", err)
 	}
 
-	pages = append(pages, FileWithContent{Name: layout, Content: string(layoutContent)})
+	// Intentionally prepend the layout so any declared definitions from it will be overridden by other templates,
+	// for example `{{ define "HEADER" }}` or similar blocks. If not, the default provided by the template will be the
+	// last one defined, and therefore used.
+	pages = append([]FileWithContent{{Name: layout, Content: string(layoutContent)}}, pages...)
 	return pages, nil
 }
 
