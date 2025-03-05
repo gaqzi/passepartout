@@ -1,6 +1,7 @@
 package passepartout
 
 import (
+	"errors"
 	"io"
 	"io/fs"
 )
@@ -8,6 +9,24 @@ import (
 type readDirReadFileFS interface {
 	fs.ReadDirFS
 	fs.ReadFileFS
+}
+
+// FSWithoutPrefix will take a passed in filesystem and strip away "prefix" when using the filesystem.
+// It uses [fs.Sub] under the hood, and it's a wrapper to ensure the returned filesystem can be used by passepartout.
+// The usecase is that you store all your templates in `templates/` and don't want to actually use your templates as
+// `templates/page/index.tmpl` and instead just say `page/index.html`.
+func FSWithoutPrefix(fs_ readDirReadFileFS, prefix string) (readDirReadFileFS, error) {
+	sub, err := fs.Sub(fs_, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	fs_, ok := sub.(readDirReadFileFS)
+	if !ok {
+		return nil, errors.New("[fs.Sub] returned a filesystem that doesn't implement readDirReadFileFS, this is probably a bug in passepartout")
+	}
+
+	return fs_, nil
 }
 
 type passepartout struct {
