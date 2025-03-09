@@ -37,7 +37,7 @@ func FSWithoutPrefix(fs_ readDirReadFileFS, prefix string) (readDirReadFileFS, e
 	return fs_, nil
 }
 
-type passepartout struct {
+type Passepartout struct {
 	loader loader
 }
 
@@ -70,8 +70,8 @@ type passepartout struct {
 //
 //	passepartout := passepartout.LoadFrom(os.DirFS("templates/")) // the path to the base folder, removes the first part so all templates are referenced out of this folder
 //	str, err := passepartout.Render("index/main.tmpl", map[string]any{"Items": []string{"Hello", "World"}})  // renders the index/main.tmpl using the index/_main/_item.tmpl partial and returns the result as a string
-func LoadFrom(fs_ readDirReadFileFS) (*passepartout, error) {
-	return &passepartout{
+func LoadFrom(fs_ readDirReadFileFS) (*Passepartout, error) {
+	return &Passepartout{
 		loader: ppdefaults.NewLoaderBuilder().
 			WithDefaults(fs_).
 			Build(),
@@ -80,11 +80,11 @@ func LoadFrom(fs_ readDirReadFileFS) (*passepartout, error) {
 
 // New instantiates a passepartout instance matching with the given loader.
 // [ppdefaults.Loader] can be instantiated with [ppdefaults.NewLoaderBuilder()] and configured.
-func New(loader loader) *passepartout {
-	return &passepartout{loader: loader}
+func New(loader loader) *Passepartout {
+	return &Passepartout{loader: loader}
 }
 
-func (p *passepartout) Render(out io.Writer, name string, data any) error {
+func (p *Passepartout) Render(out io.Writer, name string, data any) error {
 	t, err := p.loader.Standalone(name)
 	if err != nil {
 		return err
@@ -93,7 +93,7 @@ func (p *passepartout) Render(out io.Writer, name string, data any) error {
 	return t.ExecuteTemplate(out, name, data)
 }
 
-func (p *passepartout) RenderInLayout(out io.Writer, layout string, name string, data any) error {
+func (p *Passepartout) RenderInLayout(out io.Writer, layout string, name string, data any) error {
 	t, err := p.loader.InLayout(name, layout)
 	if err != nil {
 		return err
