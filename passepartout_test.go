@@ -73,7 +73,7 @@ func TestPassepartout_Render(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			pp, err := passepartout.Load(tc.fs)
+			pp, err := passepartout.LoadFrom(tc.fs)
 			require.NoError(t, err, "expected to have loaded all the templates without issues")
 
 			output := bytes.NewBuffer(nil)
@@ -135,7 +135,7 @@ func TestPassepartout_RenderInLayout(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			pp, err := passepartout.Load(tc.fs)
+			pp, err := passepartout.LoadFrom(tc.fs)
 			require.NoError(t, err, "expected to have loaded all the templates without issues")
 
 			output := bytes.NewBuffer(nil)

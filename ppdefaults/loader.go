@@ -46,6 +46,21 @@ func flatMap(name string, fns ...func(string) ([]FileWithContent, error)) ([]Fil
 	return files, nil
 }
 
+// WithDefaults sets the default Partial and Template loader together with the template creator using the passed in FS.
+// Uses:
+//   - [PartialsInFolderOnly] for PartialsFor
+//   - [TemplateByNameLoader] for TemplateLoader
+//   - [CreateTemplate] for CreateTemplate
+func (b *LoaderBuilder) WithDefaults(fsys FS) *LoaderBuilder {
+	partials := PartialsInFolderOnly{FS: fsys}
+	b.build.PartialsFor = partials.Load
+
+	b.build.TemplateLoader = &TemplateByNameLoader{FS: fsys}
+	b.build.CreateTemplate = CreateTemplate
+
+	return b
+}
+
 type Loader struct {
 	// TemplateConfig is used as a base when creating new templates from a collection of files.
 	// See [template.Template.Funcs] and [template.Template.Option] for what often is configured.

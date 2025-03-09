@@ -2,6 +2,7 @@ package passepartout
 
 import (
 	"errors"
+	"html/template"
 	"io"
 	"io/fs"
 
@@ -11,6 +12,11 @@ import (
 type readDirReadFileFS interface {
 	fs.ReadDirFS
 	fs.ReadFileFS
+}
+
+type loader interface {
+	Standalone(name string) (*template.Template, error)
+	InLayout(page string, layout string) (*template.Template, error)
 }
 
 // FSWithoutPrefix will take a passed in filesystem and strip away "prefix" when using the filesystem.
@@ -32,11 +38,11 @@ func FSWithoutPrefix(fs_ readDirReadFileFS, prefix string) (readDirReadFileFS, e
 }
 
 type passepartout struct {
-	loader *ppdefaults.Loader
+	loader loader
 }
 
-// Load initializes a template manager to load and render templates within a passed in filesystem.
-// Passepartout manages Go templates and their relationships to make sure they "pop" and are simple to manage.
+// LoadFrom initializes a template manager to load and render templates within a passed in filesystem.
+// Passepartout manages the loading of Go templates.
 // It does this by relying on a hierarchy in a folder that is:
 //
 //	templates/                               # base folder
@@ -58,21 +64,24 @@ type passepartout struct {
 // Given the folder structure:
 //
 //	templates/index/main.tmpl
-//	templates/index/_main/_item.tmpl
+//	templates/index/main/_item.tmpl
 //
 // Usage:
 //
-//	passepartout := passepartout.Load(os.DirFS("templates/")) // the path to the base folder, removes the first part so all templates are referenced out of this folder
+//	passepartout := passepartout.LoadFrom(os.DirFS("templates/")) // the path to the base folder, removes the first part so all templates are referenced out of this folder
 //	str, err := passepartout.Render("index/main.tmpl", map[string]any{"Items": []string{"Hello", "World"}})  // renders the index/main.tmpl using the index/_main/_item.tmpl partial and returns the result as a string
-func Load(fs_ readDirReadFileFS) (*passepartout, error) {
-	partials := &ppdefaults.PartialsInFolderOnly{FS: fs_}
-	l := ppdefaults.Loader{
-		PartialsFor:    partials.Load,
-		TemplateLoader: &ppdefaults.TemplateByNameLoader{FS: fs_},
-		CreateTemplate: ppdefaults.CreateTemplate,
-	}
+func LoadFrom(fs_ readDirReadFileFS) (*passepartout, error) {
+	return &passepartout{
+		loader: ppdefaults.NewLoaderBuilder().
+			WithDefaults(fs_).
+			Build(),
+	}, nil
+}
 
-	return &passepartout{loader: &l}, nil
+// New instantiates a passepartout instance matching with the given loader.
+// [ppdefaults.Loader] can be instantiated with [ppdefaults.NewLoaderBuilder()] and configured.
+func New(loader loader) *passepartout {
+	return &passepartout{loader: loader}
 }
 
 func (p *passepartout) Render(out io.Writer, name string, data any) error {
