@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"passepartout"
+	"github.com/gaqzi/passepartout"
 )
 
 func noError(t *testing.T, err error) {

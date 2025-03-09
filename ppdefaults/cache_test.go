@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"passepartout/ppdefaults"
+	"github.com/gaqzi/passepartout/ppdefaults"
 )
 
 type mockLoader struct {

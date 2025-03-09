@@ -6,7 +6,7 @@ import (
 	"io"
 	"io/fs"
 
-	"passepartout/ppdefaults"
+	"github.com/gaqzi/passepartout/ppdefaults"
 )
 
 type readDirReadFileFS interface {

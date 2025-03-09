@@ -1,4 +1,4 @@
-module passepartout
+module github.com/gaqzi/passepartout
 
 go 1.24.1
 
