@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"html/template"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -472,7 +473,10 @@ func TestCreateTemplate(t *testing.T) {
 		actual, err := ppdefaults.CreateTemplate(baseTemplate, files)
 
 		require.NoError(t, err)
-		require.Equal(t, `; defined templates are: "file1.tmpl", "file2.tmpl"`, actual.DefinedTemplates())
+		_, after, found := strings.Cut(actual.DefinedTemplates(), ": ")
+		require.True(t, found, "expected to have created multiple templates")
+		templates := strings.Split(after, ", ")
+		require.ElementsMatch(t, []string{`"file1.tmpl"`, `"file2.tmpl"`}, templates)
 	})
 
 	t.Run("it uses the base template provided as the parent for all new created templates", func(t *testing.T) {
