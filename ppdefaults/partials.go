@@ -7,14 +7,53 @@ import (
 	"strings"
 )
 
-// PartialsWithCommon loads partials in the same way as [PartialsInFolderOnly]
-// and from a CommonDir, for example "partials".
+// PartialsInFolderOnly implements the [PartialLoader] interface.
+type PartialsInFolderOnly struct {
+	FS fs.ReadDirFS
+}
+
+// Load gets files from a folder named after the passed in template and treats them as partials.
+// Ex: a template named "something/hello.tmpl" will load any files in the folder "something/hello/".
+func (p *PartialsInFolderOnly) Load(page string) ([]FileWithContent, error) {
+	ext := path.Ext(page)
+	dirName := strings.TrimSuffix(page, ext)
+
+	var files []FileWithContent
+	err := fs.WalkDir(p.FS, dirName, func(filePath string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+
+		if entry.IsDir() {
+			return nil
+		}
+
+		content, err := fs.ReadFile(p.FS, filePath)
+		if err != nil {
+			return err
+		}
+
+		files = append(files, FileWithContent{Name: filePath, Content: string(content)})
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return files, nil
+}
+
+// PartialsWithCommon implements the [PartialLoader] interface.
 type PartialsWithCommon struct {
 	FS        fs.ReadDirFS
 	CommonDir string
 }
 
-// Load implements the PartialLoader interface.
+// Load partials in the same way as [PartialsInFolderOnly.Load] and from a CommonDir, for example "partials".
 func (p *PartialsWithCommon) Load(page string) ([]FileWithContent, error) {
 	var files []FileWithContent
 
