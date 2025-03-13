@@ -35,6 +35,31 @@ Each template is named after its path (excluding the templates prefix):
 - `templates/reviews/show.tmpl` is named `reviews/show.tmpl`
 - `templates/reviews/show/_details.tmpl` is named `reviews/show/_details.tmpl`
 
+### Layout Example
+
+Layouts are templates that wrap around page content. A simple example:
+
+**Layout template** (`layouts/base.tmpl`):
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Example</title>
+</head>
+<body>
+    {{ block "content" . }}{{ end }}
+</body>
+</html>
+```
+
+**Standalone template** (`home/index.tmpl`):
+```html
+<h1>Hello, {{ .Name }}!</h1>
+```
+
+When rendered with `p.RenderInLayout(writer, "layouts/base.tmpl", "home/index.tmpl", data)`, 
+the standalone content is inserted into the layout where the `content` block is defined, and the standalone template is automatically wrapped.
+
 ### Alternatives
 
 #### PartialsWithCommon
