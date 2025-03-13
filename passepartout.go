@@ -9,7 +9,7 @@ import (
 	"github.com/gaqzi/passepartout/ppdefaults"
 )
 
-type readDirReadFileFS interface {
+type FS interface {
 	fs.ReadDirFS
 	fs.ReadFileFS
 }
@@ -23,18 +23,18 @@ type loader interface {
 // It uses [fs.Sub] under the hood, and it's a wrapper to ensure the returned filesystem can be used by passepartout.
 // The usecase is that you store all your templates in `templates/` and don't want to actually use your templates as
 // `templates/page/index.tmpl` and instead just say `page/index.html`.
-func FSWithoutPrefix(fs_ readDirReadFileFS, prefix string) (readDirReadFileFS, error) {
-	sub, err := fs.Sub(fs_, prefix)
+func FSWithoutPrefix(fsys FS, prefix string) (FS, error) {
+	sub, err := fs.Sub(fsys, prefix)
 	if err != nil {
 		return nil, err
 	}
 
-	fs_, ok := sub.(readDirReadFileFS)
+	fsys, ok := sub.(FS)
 	if !ok {
-		return nil, errors.New("[fs.Sub] returned a filesystem that doesn't implement readDirReadFileFS, this is probably a bug in passepartout")
+		return nil, errors.New("[fs.Sub] returned a filesystem that doesn't implement FS, this is probably a bug in passepartout")
 	}
 
-	return fs_, nil
+	return fsys, nil
 }
 
 type Passepartout struct {
@@ -70,7 +70,7 @@ type Passepartout struct {
 //
 //	passepartout := passepartout.LoadFrom(os.DirFS("templates/")) // the path to the base folder, removes the first part so all templates are referenced out of this folder
 //	str, err := passepartout.Render("index/main.tmpl", map[string]any{"Items": []string{"Hello", "World"}})  // renders the index/main.tmpl using the index/_main/_item.tmpl partial and returns the result as a string
-func LoadFrom(fs_ readDirReadFileFS) (*Passepartout, error) {
+func LoadFrom(fs_ FS) (*Passepartout, error) {
 	return &Passepartout{
 		loader: ppdefaults.NewLoaderBuilder().
 			WithDefaults(fs_).
