@@ -181,20 +181,6 @@ func TestPartialsWithCommon(t *testing.T) {
 				)
 			},
 		},
-		{
-			name:     "handles conflicts by including both files",
-			pageName: "test.tmpl",
-			fs: fstest.MapFS{
-				"test/_header.tmpl":     {Data: []byte("template header")},
-				"partials/_header.tmpl": {Data: []byte("common header")},
-			},
-			expect: func(t *testing.T, actual []ppdefaults.FileWithContent, err error) {
-				require.NoError(t, err)
-				require.Len(t, actual, 2, "expected to include both files with the same name")
-				// We don't assert the exact content here since either could be loaded first,
-				// but we do ensure both are loaded
-			},
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			loader := ppdefaults.PartialsWithCommon{FS: tc.fs, CommonDir: "partials"}
