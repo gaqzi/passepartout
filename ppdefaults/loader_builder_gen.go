@@ -42,8 +42,8 @@ func (b *LoaderBuilder) PartialsFor(partialsFor PartialLoader) *LoaderBuilder {
 }
 
 // TemplateConfig sets Loader's TemplateConfig.
-func (b *LoaderBuilder) TemplateConfig(templateConfig template.Template) *LoaderBuilder {
-	b.build.TemplateConfig = &templateConfig
+func (b *LoaderBuilder) TemplateConfig(templateConfig *template.Template) *LoaderBuilder {
+	b.build.TemplateConfig = templateConfig
 	return b
 }
 
